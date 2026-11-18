@@ -1,0 +1,9 @@
+# Narzędzia autora – nie są potrzebne na hostingu
+build_site.py
+parity_check.py
+parity_dump.py
+parity_hash.py
+parity_txt.py
+check_zip.py
+_parity_desktop.json
+__pycache__/

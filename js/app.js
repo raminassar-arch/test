@@ -1,0 +1,1486 @@
+/* ==========================================================================
+   PAB cyfrowa – wersja Google Sites
+   app.js – interfejs: routing, formularze, podgląd, eksport, licencja.
+   Wszystkie dane projektu są przechowywane lokalnie w przeglądarce
+   (localStorage). Nic nie jest wysyłane na serwer.
+   ========================================================================== */
+(function () {
+  "use strict";
+
+  const F = window.PAB_FIELDS;
+  const PROJECT_KEY = "pab.sites.project.v1";
+
+  let project = null;
+  let licence = null;
+  let engine = { state: "idle", error: "" }; // idle | loading | ready | error
+  let enginePromise = null;
+  let saveTimer = null;
+  let busy = 0;
+  let toastTimer = null;
+
+  // --- pomocnicze ----------------------------------------------------------
+
+  function esc(value) {
+    return String(value === undefined || value === null ? "" : value)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
+  }
+
+  function $(sel, root) {
+    return (root || document).querySelector(sel);
+  }
+
+  function $$(sel, root) {
+    return Array.prototype.slice.call((root || document).querySelectorAll(sel));
+  }
+
+  function num(value) {
+    const n = parseFloat(String(value === undefined || value === null ? "" : value).replace(/\s/g, "").replace(",", "."));
+    return isNaN(n) ? 0 : n;
+  }
+
+  function pl(n, dec) {
+    return Number(n || 0)
+      .toFixed(dec === undefined ? 2 : dec)
+      .replace(".", ",");
+  }
+
+  function todayISO() {
+    const d = new Date();
+    const pad = function (v) {
+      return (v < 10 ? "0" : "") + v;
+    };
+    return pad(d.getDate()) + "." + pad(d.getMonth() + 1) + "." + d.getFullYear();
+  }
+
+  function toast(message, kind) {
+    let box = $("#toast");
+    if (!box) {
+      box = document.createElement("div");
+      box.id = "toast";
+      document.body.appendChild(box);
+    }
+    box.className = "toast show" + (kind ? " " + kind : "");
+    box.textContent = message;
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function () {
+      box.className = "toast";
+    }, 4200);
+  }
+
+  function busyStart(label) {
+    busy += 1;
+    let box = $("#busy");
+    if (!box) {
+      box = document.createElement("div");
+      box.id = "busy";
+      box.innerHTML = '<div class="busy-card"><div class="spinner"></div><p></p></div>';
+      document.body.appendChild(box);
+    }
+    $("p", box).textContent = label || "Pracuję…";
+    box.classList.add("show");
+  }
+
+  function busyStop() {
+    busy = Math.max(0, busy - 1);
+    const box = $("#busy");
+    if (box && busy === 0) box.classList.remove("show");
+  }
+
+  // --- projekt -------------------------------------------------------------
+
+  function emptyProject() {
+    return {
+      meta: { wersja: 1, program: F.app.name },
+      ogolne: {
+        nazwa: "",
+        inwestor: "",
+        inwestor_adres: "",
+        adres: "",
+        dzialki: "",
+        obreb: "",
+        jednostka: "",
+        kategoria: "",
+        rodzaj: "",
+        pow_dzialki: "",
+        data: todayISO(),
+        nr_projektu: "",
+        tom: "",
+        projektant: "",
+        specjalnosc: "",
+        uprawnienia: "",
+        sprawdzajacy: "",
+        sprawdzajacy_uprawnienia: "",
+        zakres: "",
+        organ: "",
+        organ_adres: "",
+        osoba_wnioskujaca: "",
+        funkcja_wnioskujacego: "inwestor",
+        projektanci: [],
+      },
+      pzt: {},
+      pab: {},
+      bioz: {},
+      dokumenty: [],
+      zalaczniki: [],
+      obiekty: [],
+      bilans: [],
+    };
+  }
+
+  function loadProject() {
+    try {
+      const raw = localStorage.getItem(PROJECT_KEY);
+      if (!raw) return null;
+      const data = JSON.parse(raw);
+      return data && typeof data === "object" ? data : null;
+    } catch (err) {
+      return null;
+    }
+  }
+
+  function saveProject(immediate) {
+    clearTimeout(saveTimer);
+    const write = function () {
+      try {
+        localStorage.setItem(PROJECT_KEY, JSON.stringify(project));
+        const chip = $("#save-state");
+        if (chip) {
+          chip.textContent = "zapisano " + new Date().toLocaleTimeString("pl-PL");
+          chip.classList.add("flash");
+          setTimeout(function () {
+            chip.classList.remove("flash");
+          }, 900);
+        }
+      } catch (err) {
+        toast("Nie udało się zapisać projektu w przeglądarce.", "err");
+      }
+    };
+    if (immediate) write();
+    else saveTimer = setTimeout(write, 400);
+  }
+
+  function setProject(data, message) {
+    project = data;
+    if (!project.ogolne) project.ogolne = {};
+    if (!Array.isArray(project.ogolne.projektanci)) project.ogolne.projektanci = [];
+    ["dokumenty", "zalaczniki", "obiekty", "bilans"].forEach(function (key) {
+      if (!Array.isArray(project[key])) project[key] = [];
+    });
+    if (!project.ogolne.data) project.ogolne.data = todayISO();
+    saveProject(true);
+    if (message) toast(message);
+    render();
+  }
+
+  function getVal(section, key) {
+    const bag = project[section] || {};
+    const value = bag[key];
+    return value === undefined || value === null ? "" : value;
+  }
+
+  function setVal(section, key, value) {
+    if (!project[section]) project[section] = {};
+    project[section][key] = value;
+  }
+
+  function isRequired(section, key) {
+    return F.required.some(function (pair) {
+      return pair[0] === section && pair[1] === key;
+    });
+  }
+
+  function missingRequired() {
+    return F.required.filter(function (pair) {
+      const value = getVal(pair[0], pair[1]);
+      return String(value || "").trim() === "";
+    });
+  }
+
+  // --- silnik --------------------------------------------------------------
+
+  function ensureEngine() {
+    if (engine.state === "ready") return Promise.resolve();
+    if (enginePromise) return enginePromise;
+    engine.state = "loading";
+    updateEngineChip();
+    enginePromise = window.PABEngine.init(function (message) {
+      const chip = $("#engine-chip");
+      if (chip) chip.textContent = message;
+    })
+      .then(function () {
+        engine.state = "ready";
+        engine.error = "";
+        updateEngineChip();
+        return true;
+      })
+      .catch(function (err) {
+        engine.state = "error";
+        engine.error = err && err.message ? err.message : String(err);
+        enginePromise = null;
+        updateEngineChip();
+        throw err;
+      });
+    return enginePromise;
+  }
+
+  function updateEngineChip() {
+    const chip = $("#engine-chip");
+    if (!chip) return;
+    const labels = {
+      idle: "silnik: nieuruchomiony",
+      loading: "silnik: ładowanie…",
+      ready: "silnik: gotowy",
+      error: "silnik: błąd",
+    };
+    chip.textContent = labels[engine.state] || "";
+    chip.className = "chip engine " + engine.state;
+  }
+
+  // --- licencja ------------------------------------------------------------
+
+  function licenceBadge() {
+    if (!licence) return '<span class="badge">licencja: …</span>';
+    const cls = licence.valid ? (licence.licensed ? "ok" : "trial") : "bad";
+    return (
+      '<a class="badge ' + cls + '" href="#/licencja" title="' + esc(licence.summary) + '">' +
+      esc(licence.short) +
+      "</a>"
+    );
+  }
+
+  function gate() {
+    if (!licence) return true;
+    if (licence.valid) return true;
+    const head = route()[0];
+    return head === "licencja" || head === "o-programie";
+  }
+
+  // --- routing -------------------------------------------------------------
+
+  function route() {
+    const raw = (location.hash || "").replace(/^#\/?/, "");
+    const parts = raw.split("/").filter(Boolean);
+    return parts.length ? parts : ["start"];
+  }
+
+  function go(path) {
+    location.hash = "#/" + path;
+  }
+
+  const TITLES = {
+    start: "Start",
+    ogolne: "Dane ogólne",
+    pzt: "PZT",
+    pab: "PAB",
+    bioz: "BIOZ",
+    bilans: "Bilans i obiekty",
+    zal: "Załączniki",
+    preview: "Podgląd",
+    podglad: "Podgląd",
+    export: "Eksport",
+    eksport: "Eksport",
+    check: "Kontrola",
+    kontrola: "Kontrola",
+    projektanci: "Projektanci",
+    obiekty: "Obiekty",
+    dokumenty: "Dokumenty",
+    zalaczniki: "Załączniki",
+    licencja: "Licencja",
+    "o-programie": "O programie",
+  };
+
+  // --- widoki --------------------------------------------------------------
+
+  function viewStart() {
+    const missing = missingRequired();
+    const filled = F.required.length - missing.length;
+    const pct = Math.round((filled / Math.max(1, F.required.length)) * 100);
+    const totalFields = Object.keys(F.groups).reduce(function (sum, section) {
+      return (
+        sum +
+        F.groups[section].reduce(function (inner, group) {
+          return inner + group.rows.length;
+        }, 0)
+      );
+    }, 0);
+
+    return (
+      '<section class="hero">' +
+      '<div class="hero-text">' +
+      "<h1>Dokumentacja do pozwolenia na budowę</h1>" +
+      "<p>PZT, PAB, wniosek, oświadczenie, informacja i plan BIOZ oraz wykaz załączników – " +
+      "wypełnij dane raz, a program przygotuje komplet dokumentów w formatach DOCX, PDF i TXT.</p>" +
+      '<div class="hero-actions">' +
+      '<button class="btn primary" data-act="new">Nowy projekt</button>' +
+      '<button class="btn" data-act="demo">Wczytaj przykład</button>' +
+      '<label class="btn file">Import JSON<input type="file" accept=".json,application/json" data-act="import" hidden></label>' +
+      "</div>" +
+      "</div>" +
+      '<div class="hero-card">' +
+      '<div class="ring" style="--pct:' + pct + '"><span>' + pct + "%</span></div>" +
+      "<h2>Kompletność danych</h2>" +
+      "<p>" + filled + " z " + F.required.length + " pól wymaganych</p>" +
+      (missing.length
+        ? '<p class="small">Brakuje: ' + missing.map(function (p) { return esc(labelOf(p[0], p[1])); }).join(", ") + "</p>"
+        : '<p class="small ok">Wszystkie pola wymagane są wypełnione.</p>') +
+      "</div>" +
+      "</section>" +
+
+      '<section class="cards">' +
+      card("ogolne", "Dane ogólne", "Inwestycja, inwestor, działki, data opracowania.", "dane/ogolne") +
+      card("pzt", "PZT", "Projekt zagospodarowania terenu – " + countRows("pzt") + " pól.", "dane/pzt") +
+      card("pab", "PAB", "Opis architektoniczno-budowlany – " + countRows("pab") + " pól.", "dane/pab") +
+      card("bioz", "BIOZ", "Informacja i plan bezpieczeństwa – " + countRows("bioz") + " pól.", "dane/bioz") +
+      card("bilans", "Bilans i obiekty", "Powierzchnie, wskaźniki i wykaz obiektów.", "bilans") +
+      card("zal", "Załączniki", "Dokumenty i pliki dołączane do wniosku.", "zalaczniki") +
+      card("preview", "Podgląd", "Zobacz gotową treść dokumentu.", "podglad") +
+      card("export", "Eksport", "DOCX, PDF i TXT – pojedynczo lub zbiorczo.", "eksport") +
+      card("check", "Kontrola", "Sprawdź kompletność i spójność danych.", "kontrola") +
+      "</section>" +
+
+      '<section class="panel">' +
+      '<h2>Projekt w tej przeglądarce</h2>' +
+      '<p class="small">Dane są zapisywane wyłącznie lokalnie (localStorage). ' +
+      "Możesz przenieść projekt na inne urządzenie, eksportując plik JSON.</p>" +
+      '<div class="row-actions">' +
+      '<button class="btn" data-act="save-json">Zapisz projekt (JSON)</button>' +
+      '<button class="btn danger" data-act="reset">Wyczyść projekt</button>' +
+      "</div>" +
+      '<p class="small muted">Pól w formularzach: ' + totalFields + ".</p>" +
+      "</section>"
+    );
+  }
+
+  function labelOf(section, key) {
+    const groups = F.groups[section] || [];
+    for (let i = 0; i < groups.length; i++) {
+      for (let j = 0; j < groups[i].rows.length; j++) {
+        if (groups[i].rows[j].key === key) return groups[i].rows[j].label;
+      }
+    }
+    return key;
+  }
+
+  function countRows(section) {
+    return (F.groups[section] || []).reduce(function (sum, group) {
+      return sum + group.rows.length;
+    }, 0);
+  }
+
+  function card(step, title, text, path) {
+    return (
+      '<a class="card" href="#/' + path + '">' +
+      "<h3>" + esc(title) + "</h3>" +
+      "<p>" + esc(text) + "</p>" +
+      '<span class="card-go">otwórz →</span>' +
+      "</a>"
+    );
+  }
+
+  function fieldControl(section, row) {
+    const path = section + "." + row.key;
+    const value = getVal(section, row.key);
+    const hint = F.hints[path] || "";
+    const req = isRequired(section, row.key) ? ' <span class="req" title="pole wymagane">*</span>' : "";
+    let control = "";
+
+    if (row.type === "t") {
+      control =
+        '<textarea rows="' + (row.arg || 3) + '" data-bind="' + path + '">' + esc(value) + "</textarea>";
+    } else if (row.type === "x") {
+      control =
+        '<label class="switch"><input type="checkbox" data-bind="' + path + '"' +
+        (value ? " checked" : "") +
+        "><span></span></label>";
+    } else if (row.type === "c") {
+      const options = (row.arg || [])
+        .map(function (option) {
+          const text = Array.isArray(option) ? option[1] : option;
+          const val = Array.isArray(option) ? option[0] : option;
+          return '<option value="' + esc(val) + '"' + (String(value) === String(val) ? " selected" : "") + ">" + esc(text) + "</option>";
+        })
+        .join("");
+      control = '<select data-bind="' + path + '"><option value="">— wybierz —</option>' + options + "</select>";
+    } else if (row.type === "l") {
+      const selected = Array.isArray(value) ? value : [];
+      control =
+        '<div class="checks">' +
+        (row.arg || [])
+          .map(function (pair) {
+            return (
+              '<label class="check"><input type="checkbox" data-list="' + path + '" value="' +
+              esc(pair[0]) + '"' + (selected.indexOf(pair[0]) >= 0 ? " checked" : "") +
+              "><span>" + esc(pair[1]) + "</span></label>"
+            );
+          })
+          .join("") +
+        "</div>";
+    } else {
+      control = '<input type="text" data-bind="' + path + '" value="' + esc(value) + '">';
+    }
+
+    return (
+      '<div class="field' + (row.type === "t" || row.type === "l" || row.type === "x" ? " wide" : "") + '">' +
+      '<label class="field-label">' + esc(row.label) + req + "</label>" +
+      control +
+      (hint ? '<small class="hint">' + esc(hint) + "</small>" : "") +
+      "</div>"
+    );
+  }
+
+  function viewSection(section) {
+    const groups = F.groups[section] || [];
+    const meta = {
+      ogolne: ["Dane ogólne", "Podstawowe informacje o inwestycji, inwestorze i opracowaniu."],
+      pzt: ["Projekt zagospodarowania terenu", "Zakres i sposób zagospodarowania działki."],
+      pab: ["Opis architektoniczno-budowlany", "Rozwiązania architektoniczne, techniczne i środowiskowe."],
+      bioz: ["Bezpieczeństwo i ochrona zdrowia", "Informacja BIOZ oraz plan BIOZ."],
+    }[section] || ["Dane", ""];
+
+    let html =
+      '<div class="page-head"><div><h1>' + esc(meta[0]) + "</h1><p>" + esc(meta[1]) + "</p></div>" +
+      '<div class="head-actions">' +
+      '<button class="btn small" data-act="fill-empty">Uzupełnij datę</button>' +
+      "</div></div>";
+
+    if (section === "ogolne") {
+      html +=
+        '<div class="panel tinted"><h3>Projektanci i autorzy opracowania</h3>' +
+        "<p>Osoby podpisujące dokumenty – trafiają na stronę tytułową każdego opracowania.</p>" +
+        '<a class="btn small" href="#/projektanci">Edytuj projektantów (' +
+        (project.ogolne.projektanci || []).length + ")</a></div>";
+    }
+
+    groups.forEach(function (group, index) {
+      html +=
+        '<section class="panel' + (index === 0 ? "" : "") + '">' +
+        "<h2>" + esc(group.title) + "</h2>" +
+        '<div class="grid">' +
+        group.rows.map(function (row) { return fieldControl(section, row); }).join("") +
+        "</div></section>";
+    });
+
+    return html;
+  }
+
+  function viewProjektanci() {
+    const rows = project.ogolne.projektanci || [];
+    const funkcje = F.projektanciFunkcje || ["Projektant"];
+    const specjalnosci = F.specjalnosci || [];
+
+    return (
+      '<div class="page-head"><div><h1>Projektanci i autorzy</h1>' +
+      "<p>Co najmniej jedna osoba jest wymagana do wygenerowania dokumentacji.</p></div>" +
+      '<div class="head-actions"><button class="btn primary small" data-act="add-projektant">Dodaj osobę</button></div></div>' +
+      '<section class="panel">' +
+      (rows.length
+        ? '<div class="table-editor"><table><thead><tr><th>Funkcja</th><th>Imię i nazwisko</th><th>Specjalność</th><th>Nr uprawnień</th><th></th></tr></thead><tbody>' +
+          rows
+            .map(function (row, index) {
+              return (
+                "<tr>" +
+                "<td>" + selectCell("projektanci", index, "funkcja", funkcje, row.funkcja) + "</td>" +
+                '<td><input data-row="projektanci" data-index="' + index + '" data-field="imie" value="' + esc(row.imie) + '"></td>' +
+                "<td>" + selectCell("projektanci", index, "specjalnosc", specjalnosci, row.specjalnosc) + "</td>" +
+                '<td><input data-row="projektanci" data-index="' + index + '" data-field="uprawnienia" value="' + esc(row.uprawnienia) + '"></td>' +
+                '<td class="tight"><button class="icon" title="Usuń" data-act="del-projektant" data-index="' + index + '">✕</button></td>' +
+                "</tr>"
+              );
+            })
+            .join("") +
+          "</tbody></table></div>"
+        : '<p class="empty">Nie dodano jeszcze żadnej osoby.</p>') +
+      "</section>" +
+      '<section class="panel"><h3>Podpowiedź</h3><p class="small">Kolejność osób odpowiada kolejności na stronie tytułowej. ' +
+      "Pierwsza osoba z funkcją „Projektant” jest autorem opracowania.</p></section>"
+    );
+  }
+
+  function selectCell(kind, index, field, options, value) {
+    return (
+      '<select data-row="' + kind + '" data-index="' + index + '" data-field="' + field + '">' +
+      '<option value="">—</option>' +
+      options
+        .map(function (option) {
+          const val = Array.isArray(option) ? option[0] : option;
+          return '<option value="' + esc(val) + '"' + (String(value) === String(val) ? " selected" : "") + ">" + esc(val) + "</option>";
+        })
+        .join("") +
+      "</select>"
+    );
+  }
+
+  function viewBilans() {
+    const rows = project.bilans || [];
+    const dzialka = num(project.ogolne.pow_dzialki);
+    const sum = rows.reduce(function (acc, row) { return acc + num(row.powierzchnia); }, 0);
+    const zabudowa = rows
+      .filter(function (row) { return row.kategoria === "zabudowa"; })
+      .reduce(function (acc, row) { return acc + num(row.powierzchnia); }, 0);
+    const pbc = rows
+      .filter(function (row) { return row.kategoria === "pbc"; })
+      .reduce(function (acc, row) { return acc + num(row.powierzchnia); }, 0);
+    const rest = sum - zabudowa - pbc;
+
+    return (
+      '<div class="page-head"><div><h1>Bilans terenu i obiekty</h1>' +
+      "<p>Powierzchnie w m². Wskaźniki liczone są względem powierzchni działki.</p></div>" +
+      '<div class="head-actions"><button class="btn small" data-act="add-bilans">Dodaj pozycję</button></div></div>' +
+
+      '<section class="panel">' +
+      '<div class="stats">' +
+      stat("Powierzchnia działki", dzialka ? pl(dzialka) + " m²" : "—") +
+      stat("Suma bilansu", pl(sum) + " m²") +
+      stat("Zabudowa", dzialka ? pl((100 * zabudowa) / dzialka) + " %" : "—") +
+      stat("Biologicznie czynna", dzialka ? pl((100 * pbc) / dzialka) + " %" : "—") +
+      stat("Pozostałe", pl(rest) + " m²") +
+      "</div>" +
+      (dzialka && Math.abs(sum - dzialka) > 0.5
+        ? '<p class="small warn">Suma bilansu różni się od powierzchni działki o ' + pl(sum - dzialka) + " m².</p>"
+        : "") +
+      "</section>" +
+
+      '<section class="panel">' +
+      (rows.length
+        ? '<div class="table-editor"><table><thead><tr><th>Pozycja</th><th>Kategoria</th><th>Powierzchnia [m²]</th><th></th></tr></thead><tbody>' +
+          rows
+            .map(function (row, index) {
+              return (
+                "<tr>" +
+                '<td><input data-row="bilans" data-index="' + index + '" data-field="pozycja" value="' + esc(row.pozycja) + '"></td>' +
+                "<td>" +
+                '<select data-row="bilans" data-index="' + index + '" data-field="kategoria">' +
+                (F.bilansKategorie || [])
+                  .map(function (pair) {
+                    return '<option value="' + esc(pair[0]) + '"' + (row.kategoria === pair[0] ? " selected" : "") + ">" + esc(pair[1]) + "</option>";
+                  })
+                  .join("") +
+                "</select></td>" +
+                '<td class="num"><input inputmode="decimal" data-row="bilans" data-index="' + index + '" data-field="powierzchnia" value="' + esc(row.powierzchnia) + '"></td>' +
+                '<td class="tight"><button class="icon" title="Usuń" data-act="del-bilans" data-index="' + index + '">✕</button></td>' +
+                "</tr>"
+              );
+            })
+            .join("") +
+          "</tbody></table></div>"
+        : '<p class="empty">Brak pozycji bilansu.</p>') +
+      "</section>" +
+
+      '<section class="panel">' +
+      '<div class="panel-head"><h2>Obiekty na działce</h2>' +
+      '<button class="btn small" data-act="add-obiekt">Dodaj obiekt</button></div>' +
+      (project.obiekty.length
+        ? '<div class="table-editor"><table><thead><tr><th>Nazwa</th><th>Rodzaj</th><th>Pow. zab. [m²]</th><th>Wymiary</th><th>Wys. [m]</th><th>Kond.</th><th>Uwagi</th><th></th></tr></thead><tbody>' +
+          project.obiekty
+            .map(function (row, index) {
+              return (
+                "<tr>" +
+                '<td><input data-row="obiekty" data-index="' + index + '" data-field="nazwa" value="' + esc(row.nazwa) + '"></td>' +
+                "<td>" +
+                '<select data-row="obiekty" data-index="' + index + '" data-field="rodzaj">' +
+                ['budynek', 'obiekt inżynieryjny', 'infrastruktura']
+                  .map(function (option) {
+                    return '<option value="' + option + '"' + (row.rodzaj === option ? " selected" : "") + ">" + option + "</option>";
+                  })
+                  .join("") +
+                "</select></td>" +
+                '<td class="num"><input inputmode="decimal" data-row="obiekty" data-index="' + index + '" data-field="pow_zab" value="' + esc(row.pow_zab) + '"></td>' +
+                '<td><input data-row="obiekty" data-index="' + index + '" data-field="wymiary" value="' + esc(row.wymiary) + '"></td>' +
+                '<td class="num"><input inputmode="decimal" data-row="obiekty" data-index="' + index + '" data-field="wysokosc" value="' + esc(row.wysokosc) + '"></td>' +
+                '<td class="num"><input inputmode="numeric" data-row="obiekty" data-index="' + index + '" data-field="kondygnacje" value="' + esc(row.kondygnacje) + '"></td>' +
+                '<td><input data-row="obiekty" data-index="' + index + '" data-field="uwagi" value="' + esc(row.uwagi) + '"></td>' +
+                '<td class="tight"><button class="icon" title="Usuń" data-act="del-obiekt" data-index="' + index + '">✕</button></td>' +
+                "</tr>"
+              );
+            })
+            .join("") +
+          "</tbody></table></div>"
+        : '<p class="empty">Brak obiektów – dodaj budynek lub inne obiekty.</p>') +
+      "</section>"
+    );
+  }
+
+  function stat(label, value) {
+    return '<div class="stat"><span>' + esc(label) + "</span><strong>" + esc(value) + "</strong></div>";
+  }
+
+  function viewDokumenty() {
+    const rows = project.dokumenty || [];
+    return (
+      '<div class="page-head"><div><h1>Dokumenty do wniosku</h1>' +
+      "<p>Lista dokumentów wymaganych przy pozwoleniu na budowę wraz ze statusem.</p></div>" +
+      '<div class="head-actions"><button class="btn small" data-act="mark-all">Oznacz wszystkie jako dołączone</button></div></div>' +
+      '<section class="panel">' +
+      '<div class="table-editor"><table><thead><tr><th>Dokument</th><th>Wymagany</th><th>Status</th><th>Uwagi</th></tr></thead><tbody>' +
+      rows
+        .map(function (row, index) {
+          return (
+            "<tr>" +
+            '<td><input data-row="dokumenty" data-index="' + index + '" data-field="nazwa" value="' + esc(row.nazwa) + '"></td>' +
+            '<td class="c"><input type="checkbox" data-row="dokumenty" data-index="' + index + '" data-field="wymagany"' + (row.wymagany ? " checked" : "") + "></td>" +
+            "<td>" +
+            '<select data-row="dokumenty" data-index="' + index + '" data-field="status">' +
+            (F.dokumentyStatusy || [])
+              .map(function (option) {
+                return '<option value="' + esc(option) + '"' + (row.status === option ? " selected" : "") + ">" + esc(option) + "</option>";
+              })
+              .join("") +
+            "</select></td>" +
+            '<td><input data-row="dokumenty" data-index="' + index + '" data-field="uwagi" value="' + esc(row.uwagi) + '"></td>' +
+            "</tr>"
+          );
+        })
+        .join("") +
+      "</tbody></table></div>" +
+      '<p class="small muted">Lista pochodzi z rozporządzenia i jest gotowa do uzupełnienia.</p>' +
+      "</section>"
+    );
+  }
+
+  function viewZalaczniki() {
+    const rows = project.zalaczniki || [];
+    return (
+      '<div class="page-head"><div><h1>Załączniki</h1>' +
+      "<p>Wykaz plików i opracowań dołączanych do wniosku.</p></div>" +
+      '<div class="head-actions"><button class="btn primary small" data-act="add-zalacznik">Dodaj załącznik</button></div></div>' +
+      '<section class="panel">' +
+      (rows.length
+        ? '<div class="table-editor"><table><thead><tr><th>Nazwa</th><th>Status</th><th>Opis</th><th></th></tr></thead><tbody>' +
+          rows
+            .map(function (row, index) {
+              return (
+                "<tr>" +
+                '<td><input data-row="zalaczniki" data-index="' + index + '" data-field="nazwa" value="' + esc(row.nazwa) + '"></td>' +
+                "<td>" +
+                '<select data-row="zalaczniki" data-index="' + index + '" data-field="status">' +
+                (F.dokumentyStatusy || [])
+                  .map(function (option) {
+                    return '<option value="' + esc(option) + '"' + (row.status === option ? " selected" : "") + ">" + esc(option) + "</option>";
+                  })
+                  .join("") +
+                "</select></td>" +
+                '<td><input data-row="zalaczniki" data-index="' + index + '" data-field="opis" value="' + esc(row.opis) + '"></td>' +
+                '<td class="tight"><button class="icon" title="Usuń" data-act="del-zalacznik" data-index="' + index + '">✕</button></td>' +
+                "</tr>"
+              );
+            })
+            .join("") +
+          "</tbody></table></div>"
+        : '<p class="empty">Brak załączników. Dodaj mapę do celów projektowych, wypis z MPZP itd.</p>') +
+      "</section>"
+    );
+  }
+
+  function viewPreview() {
+    return (
+      '<div class="page-head"><div><h1>Podgląd dokumentu</h1>' +
+      "<p>Treść generowana przez ten sam silnik co w wersji desktopowej.</p></div>" +
+      '<div class="head-actions">' +
+      '<select id="preview-kind" class="inline">' +
+      (F.dokumenty || [])
+        .map(function (pair) {
+          return '<option value="' + pair[0] + '">' + esc(pair[1]) + "</option>";
+        })
+        .join("") +
+      "</select>" +
+      '<button class="btn small" data-act="preview-print">Drukuj / PDF</button>' +
+      '<button class="btn small" data-act="preview-docx">DOCX</button>' +
+      '<button class="btn small" data-act="preview-txt">TXT</button>' +
+      "</div></div>" +
+      '<div id="preview-stage" class="preview-stage"><div class="panel"><p>Wybierz dokument i poczekaj na wczytanie silnika…</p></div></div>'
+    );
+  }
+
+  function viewExport() {
+    return (
+      '<div class="page-head"><div><h1>Eksport dokumentacji</h1>' +
+      "<p>Wybierz dokumenty i format. Wszystko powstaje w Twojej przeglądarce.</p></div></div>" +
+      '<section class="panel">' +
+      '<div class="export-list">' +
+      (F.dokumenty || [])
+        .map(function (pair) {
+          return (
+            '<label class="export-item"><input type="checkbox" data-export="' + pair[0] + '" checked>' +
+            "<span><strong>" + esc(pair[1]) + "</strong></span>" +
+            '<span class="export-links">' +
+            '<button class="link" data-act="one-docx" data-kind="' + pair[0] + '">DOCX</button>' +
+            '<button class="link" data-act="one-pdf" data-kind="' + pair[0] + '">PDF</button>' +
+            '<button class="link" data-act="one-txt" data-kind="' + pair[0] + '">TXT</button>' +
+            "</span></label>"
+          );
+        })
+        .join("") +
+      "</div>" +
+      '<div class="row-actions">' +
+      '<button class="btn primary" data-act="all-docx">Pobierz wszystkie DOCX</button>' +
+      '<button class="btn" data-act="all-txt">Pobierz wszystkie TXT</button>' +
+      '<button class="btn" data-act="all-zip">Paczka ZIP (DOCX + TXT)</button>' +
+      "</div>" +
+      '<p class="small muted">PDF powstaje przez okno druku przeglądarki – wybierz „Zapisz jako PDF”. ' +
+      "Pliki DOCX są w pełni edytowalne w Wordzie, LibreOffice i Google Docs.</p>" +
+      "</section>"
+    );
+  }
+
+  function viewCheck() {
+    return (
+      '<div class="page-head"><div><h1>Kontrola dokumentacji</h1>' +
+      "<p>Sprawdzenie kompletności danych i spójności opracowania.</p></div>" +
+      '<div class="head-actions"><button class="btn small" data-act="run-check">Sprawdź ponownie</button></div></div>' +
+      '<div id="check-stage"><div class="panel"><p>Uruchamiam kontrolę…</p></div></div>'
+    );
+  }
+
+  function viewLicencja() {
+    if (!licence) return '<div class="panel"><p>Wczytywanie stanu licencji…</p></div>';
+    const state = licence.state;
+    const cls = licence.valid ? (licence.licensed ? "ok" : "trial") : "bad";
+    return (
+      '<div class="page-head"><div><h1>Licencja</h1>' +
+      "<p>Program działa 30 dni w wersji próbnej, a następnie wymaga klucza.</p></div></div>" +
+      '<section class="panel licence ' + cls + '">' +
+      "<h2>" + esc(licence.summary) + "</h2>" +
+      '<div class="lic-grid">' +
+      stat("Stan", stateLabel(state)) +
+      stat("Okres próbny do", fmtDate(licence.trialEnd)) +
+      stat("Pozostało dni", String(licence.state === "licensed" ? (licence.daysLeft === null ? "bezterminowo" : licence.daysLeft) : licence.trialDaysLeft)) +
+      (licence.key ? stat("Klucz", licence.maskedKey) : "") +
+      (licence.holder ? stat("Licencjobiorca", licence.holder) : "") +
+      (licence.expires ? stat("Ważna do", fmtDate(licence.expires)) : "") +
+      (licence.serial ? stat("Nr seryjny", String(licence.serial)) : "") +
+      "</div>" +
+      (licence.error ? '<p class="small err">' + esc(licence.error) + "</p>" : "") +
+      "</section>" +
+
+      '<section class="panel">' +
+      "<h2>Aktywacja klucza</h2>" +
+      '<div class="grid">' +
+      '<div class="field wide"><label class="field-label">Klucz licencyjny</label>' +
+      '<input type="text" id="lic-key" placeholder="PAB-XXXX-XXXX-XXXX-XXXX-XXXX" autocomplete="off" spellcheck="false"></div>' +
+      '<div class="field"><label class="field-label">Licencjobiorca (opcjonalnie)</label>' +
+      '<input type="text" id="lic-holder" placeholder="np. Pracownia XYZ"></div>' +
+      "</div>" +
+      '<div class="row-actions">' +
+      '<button class="btn primary" data-act="activate">Aktywuj klucz</button>' +
+      (licence.key ? '<button class="btn danger" data-act="deactivate">Usuń klucz</button>' : "") +
+      "</div>" +
+      '<p class="small muted">Klucz jest sprawdzany lokalnie (HMAC-SHA256). Aktywacja nie wymaga internetu.</p>' +
+      "</section>" +
+
+      '<section class="panel"><h3>Uwaga o wersji przeglądarkowej</h3>' +
+      '<p class="small">W tej wersji stan licencji jest przechowywany w pamięci przeglądarki (localStorage). ' +
+      "Wyczyszczenie danych witryny usuwa zapis – wersja desktopowa i web przechowują stan dodatkowo w systemie.</p></section>"
+    );
+  }
+
+  function stateLabel(state) {
+    return (
+      {
+        trial: "wersja próbna",
+        trial_expired: "okres próbny upłynął",
+        licensed: "licencja pełna",
+        expired: "licencja wygasła",
+        invalid: "klucz nieprawidłowy",
+      }[state] || state
+    );
+  }
+
+  function fmtDate(isoText) {
+    if (!isoText) return "—";
+    const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(isoText);
+    return m ? m[3] + "." + m[2] + "." + m[1] : isoText;
+  }
+
+  function viewAbout() {
+    return (
+      '<div class="page-head"><div><h1>O programie</h1></div></div>' +
+      '<section class="panel about">' +
+      '<div class="about-brand"><span class="logo">PAB</span><div>' +
+      "<h2>" + esc(F.app.name) + "</h2>" +
+      "<p>" + esc(F.app.tagline) + "</p></div></div>" +
+      '<div class="lic-grid">' +
+      stat("Wersja", F.app.version) +
+      stat("Wydanie", "Google Sites / przeglądarka") +
+      stat("Autor", F.app.author + " " + F.app.year) +
+      stat("Firma", F.app.company) +
+      stat("Kontakt", F.app.email) +
+      "</div>" +
+      '<p class="small">Program przygotowuje komplet dokumentacji do wniosku o pozwolenie na budowę: ' +
+      "PZT, PAB, wniosek, oświadczenie o prawie do dysponowania nieruchomością, informację BIOZ, plan BIOZ " +
+      "oraz wykaz dokumentów i załączników.</p>" +
+      '<p class="small">Treść opracowana zgodnie z rozporządzeniem Ministra Rozwoju z 11 września 2020 r. ' +
+      "w sprawie szczegółowego zakresu i formy projektu budowlanego (Dz.U. 2022 poz. 1679 ze zm., " +
+      "w tym Dz.U. 2023 poz. 2405 i Dz.U. 2026 poz. 597) oraz Prawem budowlanym (Dz.U. 2026 poz. 524 ze zm.).</p>" +
+      '<p class="small muted">' + esc(F.app.credit) + " · " + esc(F.app.company) + " · " + esc(F.app.email) + "</p>" +
+      "</section>" +
+      '<section class="panel"><h3>Prywatność</h3>' +
+      "<p class=\"small\">Wszystkie dane projektu pozostają w Twojej przeglądarce. Aplikacja nie wysyła ich na żaden serwer. " +
+      "Jedynym zasobem pobieranym z internetu jest środowisko Python (Pyodide) oraz pliki programu.</p></section>"
+    );
+  }
+
+  // --- render --------------------------------------------------------------
+
+  function render() {
+    if (!project) project = emptyProject();
+
+    if (!gate()) {
+      if (location.hash !== "#/licencja") {
+        location.hash = "#/licencja";
+        return;
+      }
+    }
+
+    const parts = route();
+    const head = parts[0];
+    const view = $("#view");
+    if (!view) return;
+
+    $("#lic-badge").innerHTML = licenceBadge();
+    updateEngineChip();
+
+    let html = "";
+    if (head === "start") html = viewStart();
+    else if (head === "dane") html = viewSection(parts[1] || "ogolne");
+    else if (head === "projektanci") html = viewProjektanci();
+    else if (head === "bilans" || head === "obiekty") html = viewBilans();
+    else if (head === "dokumenty") html = viewDokumenty();
+    else if (head === "zalaczniki" || head === "zal") html = viewZalaczniki();
+    else if (head === "podglad" || head === "preview") html = viewPreview();
+    else if (head === "eksport" || head === "export") html = viewExport();
+    else if (head === "kontrola" || head === "check") html = viewCheck();
+    else if (head === "licencja") html = viewLicencja();
+    else if (head === "o-programie") html = viewAbout();
+    else html = viewStart();
+
+    view.innerHTML = html;
+    renderSteps(head, parts[1]);
+    document.title = (TITLES[head === "dane" ? parts[1] || "ogolne" : head] || "Start") + " – " + F.app.name;
+
+    if (head === "podglad" || head === "preview") initPreview();
+    if (head === "kontrola" || head === "check") runCheck();
+  }
+
+  function renderSteps(head, sub) {
+    const box = $("#steps");
+    if (!box) return;
+    const active = head === "dane" ? sub : head;
+    box.innerHTML = (F.steps || [])
+      .map(function (step) {
+        const key = step[0];
+        const target =
+          key === "ogolne" || key === "pzt" || key === "pab" || key === "bioz"
+            ? "dane/" + key
+            : key === "zal"
+            ? "zalaczniki"
+            : key === "preview"
+            ? "podglad"
+            : key === "export"
+            ? "eksport"
+            : key === "check"
+            ? "kontrola"
+            : key;
+        const isActive =
+          active === key ||
+          (key === "bilans" && (head === "bilans" || head === "obiekty")) ||
+          (key === "zal" && head === "zalaczniki") ||
+          (key === "preview" && head === "podglad") ||
+          (key === "export" && head === "eksport") ||
+          (key === "check" && head === "kontrola");
+        return (
+          '<a class="step' + (isActive ? " active" : "") + '" href="#/' + target + '">' +
+          "<span>" + esc(step[1]) + "</span><small>" + esc(step[2]) + "</small></a>"
+        );
+      })
+      .join("");
+  }
+
+  // --- podgląd -------------------------------------------------------------
+
+  let previewKind = "PZT";
+
+  function initPreview() {
+    const select = $("#preview-kind");
+    if (select) {
+      select.value = previewKind;
+      select.addEventListener("change", function () {
+        previewKind = select.value;
+        renderPreview();
+      });
+    }
+    renderPreview();
+  }
+
+  function renderPreview() {
+    const stage = $("#preview-stage");
+    if (!stage) return;
+    if (engine.state === "error") {
+      stage.innerHTML =
+        '<div class="panel"><h2>Silnik nie został uruchomiony</h2><p>' + esc(engine.error) +
+        "</p><p class=\"small\">Sprawdź połączenie z internetem – środowisko Python (Pyodide) jest pobierane z CDN.</p>" +
+        '<button class="btn" data-act="reload-engine">Spróbuj ponownie</button></div>';
+      return;
+    }
+    if (engine.state !== "ready") {
+      stage.innerHTML = '<div class="panel"><p>Wczytywanie silnika dokumentów…</p></div>';
+      ensureEngine()
+        .then(function () {
+          renderPreview();
+        })
+        .catch(function () {
+          renderPreview();
+        });
+      return;
+    }
+
+    stage.innerHTML = '<div class="panel"><p>Generuję podgląd…</p></div>';
+    window.PABEngine.build(previewKind, project)
+      .then(function (doc) {
+        stage.innerHTML = '<div class="paper">' + window.PABRender.document(doc) + "</div>";
+      })
+      .catch(function (err) {
+        stage.innerHTML = '<div class="panel"><h2>Nie udało się zbudować dokumentu</h2><p>' + esc(err.message || err) + "</p></div>";
+      });
+  }
+
+  // --- eksport -------------------------------------------------------------
+
+  function download(bytes, filename, mime) {
+    const blob = new Blob([bytes], { type: mime || "application/octet-stream" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    setTimeout(function () {
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    }, 400);
+  }
+
+  function docxBytes(doc) {
+    return window.PABDocx.build(doc);
+  }
+
+  function exportDocx(kind) {
+    return ensureEngine()
+      .then(function () {
+        return window.PABEngine.build(kind, project);
+      })
+      .then(function (doc) {
+        return window.PABEngine.filename(kind, project).then(function (base) {
+          download(docxBytes(doc), base + ".docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
+        });
+      });
+  }
+
+  function exportTxt(kind) {
+    return ensureEngine()
+      .then(function () {
+        return window.PABEngine.txt(kind, project);
+      })
+      .then(function (text) {
+        return window.PABEngine.filename(kind, project).then(function (base) {
+          download("\ufeff" + text.replace(/\r?\n/g, "\r\n"), base + ".txt", "text/plain;charset=utf-8");
+        });
+      });
+  }
+
+  function printDoc(kind) {
+    return ensureEngine()
+      .then(function () {
+        return window.PABEngine.build(kind, project);
+      })
+      .then(function (doc) {
+        const html = window.PABRender.printable(doc);
+        const frame = document.createElement("iframe");
+        frame.setAttribute("aria-hidden", "true");
+        frame.style.position = "fixed";
+        frame.style.right = "0";
+        frame.style.bottom = "0";
+        frame.style.width = "0";
+        frame.style.height = "0";
+        frame.style.border = "0";
+        document.body.appendChild(frame);
+        const cdoc = frame.contentWindow.document;
+        cdoc.open();
+        cdoc.write(html);
+        cdoc.close();
+        const run = function () {
+          try {
+            frame.contentWindow.focus();
+            frame.contentWindow.print();
+          } catch (err) {
+            toast("Przeglądarka zablokowała druk. Otwórz podgląd i użyj Ctrl+P.", "err");
+          }
+          setTimeout(function () {
+            if (frame.parentNode) frame.parentNode.removeChild(frame);
+          }, 60000);
+        };
+        if (cdoc.readyState === "complete") setTimeout(run, 250);
+        else frame.onload = function () { setTimeout(run, 250); };
+      });
+  }
+
+  function selectedKinds() {
+    return $$('[data-export]')
+      .filter(function (box) { return box.checked; })
+      .map(function (box) { return box.getAttribute("data-export"); });
+  }
+
+  function allDocx() {
+    const kinds = selectedKinds();
+    if (!kinds.length) return toast("Zaznacz co najmniej jeden dokument.", "err");
+    busyStart("Generuję dokumenty DOCX…");
+    ensureEngine()
+      .then(function () {
+        return kinds.reduce(function (chain, kind) {
+          return chain.then(function () { return exportDocx(kind); });
+        }, Promise.resolve());
+      })
+      .then(function () {
+        toast("Gotowe – pobrano " + kinds.length + " plików DOCX.");
+      })
+      .catch(function (err) {
+        toast("Błąd eksportu: " + (err.message || err), "err");
+      })
+      .then(busyStop);
+  }
+
+  function allTxt() {
+    const kinds = selectedKinds();
+    if (!kinds.length) return toast("Zaznacz co najmniej jeden dokument.", "err");
+    busyStart("Generuję pliki TXT…");
+    ensureEngine()
+      .then(function () {
+        return kinds.reduce(function (chain, kind) {
+          return chain.then(function () { return exportTxt(kind); });
+        }, Promise.resolve());
+      })
+      .then(function () {
+        toast("Gotowe – pobrano " + kinds.length + " plików TXT.");
+      })
+      .catch(function (err) {
+        toast("Błąd eksportu: " + (err.message || err), "err");
+      })
+      .then(busyStop);
+  }
+
+  function allZip() {
+    const kinds = selectedKinds();
+    if (!kinds.length) return toast("Zaznacz co najmniej jeden dokument.", "err");
+    busyStart("Buduję paczkę ZIP…");
+    ensureEngine()
+      .then(function () {
+        const entries = [];
+        return kinds
+          .reduce(function (chain, kind) {
+            return chain
+              .then(function () {
+                return window.PABEngine.build(kind, project).then(function (doc) {
+                  return window.PABEngine.filename(kind, project).then(function (base) {
+                    entries.push({ name: base + ".docx", data: docxBytes(doc) });
+                  });
+                });
+              })
+              .then(function () {
+                return window.PABEngine.txt(kind, project).then(function (text) {
+                  return window.PABEngine.filename(kind, project).then(function (base) {
+                    entries.push({
+                      name: base + ".txt",
+                      data: new TextEncoder().encode("\ufeff" + text.replace(/\r?\n/g, "\r\n")),
+                    });
+                  });
+                });
+              });
+          }, Promise.resolve())
+          .then(function () {
+            return entries;
+          });
+      })
+      .then(function (entries) {
+        const zip = window.PABZip.zip(entries);
+        download(zip, "PAB-dokumentacja-" + todayISO().replace(/\./g, "-") + ".zip", "application/zip");
+        toast("Gotowe – paczka ZIP zawiera " + entries.length + " plików.");
+      })
+      .catch(function (err) {
+        toast("Błąd eksportu: " + (err.message || err), "err");
+      })
+      .then(busyStop);
+  }
+
+  // --- kontrola ------------------------------------------------------------
+
+  function runCheck() {
+    const stage = $("#check-stage");
+    if (!stage) return;
+    if (engine.state !== "ready") {
+      stage.innerHTML = '<div class="panel"><p>Wczytywanie silnika kontroli…</p></div>';
+      ensureEngine()
+        .then(runCheck)
+        .catch(function () {
+          stage.innerHTML =
+            '<div class="panel"><h2>Silnik nie został uruchomiony</h2><p>' + esc(engine.error) +
+            "</p></div>";
+        });
+      return;
+    }
+    stage.innerHTML = '<div class="panel"><p>Sprawdzam dane…</p></div>';
+    window.PABEngine.validate(project)
+      .then(function (issues) {
+        const errors = issues.filter(function (i) { return i[0] === "error"; });
+        const warns = issues.filter(function (i) { return i[0] === "warn"; });
+        const infos = issues.filter(function (i) { return i[0] === "info"; });
+        const cls = errors.length ? "bad" : warns.length ? "warn" : "ok";
+        const label = errors.length
+          ? "Dokumentacja wymaga uzupełnienia"
+          : warns.length
+          ? "Dokumentacja gotowa – z uwagami"
+          : "Dokumentacja kompletna";
+
+        stage.innerHTML =
+          '<section class="panel check ' + cls + '"><h2>' + label + "</h2>" +
+          '<p class="small">Błędy: ' + errors.length + " · Uwagi: " + warns.length + " · Informacje: " + infos.length + "</p></section>" +
+          (issues.length
+            ? '<section class="panel"><ul class="issues">' +
+              issues
+                .map(function (item) {
+                  return '<li class="' + item[0] + '"><span class="tag">' + esc(levelLabel(item[0])) + "</span>" + esc(item[1]) + "</li>";
+                })
+                .join("") +
+              "</ul></section>"
+            : '<section class="panel"><p>Brak uwag – dane są kompletne.</p></section>');
+      })
+      .catch(function (err) {
+        stage.innerHTML = '<div class="panel"><p>Błąd kontroli: ' + esc(err.message || err) + "</p></div>";
+      });
+  }
+
+  function levelLabel(level) {
+    return { error: "błąd", warn: "uwaga", info: "info" }[level] || level;
+  }
+
+  // --- zdarzenia -----------------------------------------------------------
+
+  function bindField(target) {
+    const path = target.getAttribute("data-bind");
+    if (!path) return;
+    const dot = path.indexOf(".");
+    const section = path.slice(0, dot);
+    const key = path.slice(dot + 1);
+    let value;
+    if (target.type === "checkbox") value = target.checked;
+    else value = target.value;
+    setVal(section, key, value);
+    saveProject();
+    if (section === "ogolne" && (key === "pow_dzialki" || key === "data")) {
+      /* wskaźniki bilansu odświeżą się po powrocie na stronę bilansu */
+    }
+  }
+
+  function bindList(target) {
+    const path = target.getAttribute("data-list");
+    const dot = path.indexOf(".");
+    const section = path.slice(0, dot);
+    const key = path.slice(dot + 1);
+    const current = getVal(section, key);
+    const list = Array.isArray(current) ? current.slice() : [];
+    const value = target.value;
+    const index = list.indexOf(value);
+    if (target.checked && index < 0) list.push(value);
+    if (!target.checked && index >= 0) list.splice(index, 1);
+    setVal(section, key, list);
+    saveProject();
+  }
+
+  function bindRow(target) {
+    const kind = target.getAttribute("data-row");
+    const index = Number(target.getAttribute("data-index"));
+    const field = target.getAttribute("data-field");
+    if (!kind || isNaN(index) || !field) return;
+    let list;
+    if (kind === "projektanci") list = project.ogolne.projektanci;
+    else list = project[kind];
+    if (!list || !list[index]) return;
+    if (target.type === "checkbox") list[index][field] = target.checked;
+    else list[index][field] = target.value;
+    saveProject();
+  }
+
+  function addRow(kind) {
+    if (kind === "projektanci") {
+      project.ogolne.projektanci.push({ funkcja: "Projektant", imie: "", specjalnosc: "architektoniczna", uprawnienia: "" });
+    } else if (kind === "bilans") {
+      project.bilans.push({ pozycja: "Inne części terenu", kategoria: "inne", powierzchnia: "0" });
+    } else if (kind === "obiekty") {
+      project.obiekty.push({ nazwa: "", rodzaj: "budynek", pow_zab: "", wymiary: "", wysokosc: "", kondygnacje: "1", uwagi: "" });
+    } else if (kind === "zalaczniki") {
+      project.zalaczniki.push({ nazwa: "", status: "Dołączony", opis: "" });
+    }
+    saveProject(true);
+    render();
+  }
+
+  function delRow(kind, index) {
+    const list = kind === "projektanci" ? project.ogolne.projektanci : project[kind];
+    if (!list) return;
+    list.splice(index, 1);
+    saveProject(true);
+    render();
+  }
+
+  function onClick(event) {
+    const target = event.target.closest("[data-act]");
+    if (!target) return;
+    const act = target.getAttribute("data-act");
+
+    if (act === "new") {
+      if (!confirm("Utworzyć nowy, pusty projekt? Bieżące dane zostaną zastąpione.")) return;
+      setProject(emptyProject(), "Utworzono nowy projekt.");
+      go("dane/ogolne");
+      return;
+    }
+    if (act === "demo") {
+      busyStart("Wczytuję przykład…");
+      ensureEngine()
+        .then(function () { return window.PABEngine.demo(); })
+        .then(function (data) {
+          setProject(data, "Wczytano projekt przykładowy.");
+          go("dane/ogolne");
+        })
+        .catch(function (err) {
+          toast("Nie udało się wczytać przykładu: " + (err.message || err), "err");
+        })
+        .then(busyStop);
+      return;
+    }
+    if (act === "reset") {
+      if (!confirm("Usunąć wszystkie dane projektu z tej przeglądarki?")) return;
+      localStorage.removeItem(PROJECT_KEY);
+      setProject(emptyProject(), "Projekt wyczyszczony.");
+      go("start");
+      return;
+    }
+    if (act === "save-json") {
+      download(
+        new TextEncoder().encode(JSON.stringify(project, null, 2)),
+        "PAB-projekt-" + todayISO().replace(/\./g, "-") + ".json",
+        "application/json"
+      );
+      return;
+    }
+    if (act === "fill-empty") {
+      const section = route()[1] || "ogolne";
+      if (section === "ogolne" && !project.ogolne.data) {
+        project.ogolne.data = todayISO();
+        saveProject(true);
+        toast("Uzupełniono datę opracowania.");
+        render();
+      } else {
+        toast("Nie ma pustych pól, które można uzupełnić automatycznie.");
+      }
+      return;
+    }
+    if (act === "add-projektant") return addRow("projektanci");
+    if (act === "del-projektant") return delRow("projektanci", Number(target.getAttribute("data-index")));
+    if (act === "add-bilans") return addRow("bilans");
+    if (act === "del-bilans") return delRow("bilans", Number(target.getAttribute("data-index")));
+    if (act === "add-obiekt") return addRow("obiekty");
+    if (act === "del-obiekt") return delRow("obiekty", Number(target.getAttribute("data-index")));
+    if (act === "add-zalacznik") return addRow("zalaczniki");
+    if (act === "del-zalacznik") return delRow("zalaczniki", Number(target.getAttribute("data-index")));
+    if (act === "mark-all") {
+      (project.dokumenty || []).forEach(function (row) {
+        if (row.wymagany) row.status = "Dołączony";
+      });
+      saveProject(true);
+      toast("Wszystkie wymagane dokumenty oznaczone jako dołączone.");
+      render();
+      return;
+    }
+    if (act === "preview-print") {
+      busyStart("Przygotowuję wydruk…");
+      printDoc(previewKind).catch(function (err) {
+        toast("Błąd: " + (err.message || err), "err");
+      }).then(busyStop);
+      return;
+    }
+    if (act === "preview-docx") {
+      busyStart("Generuję DOCX…");
+      exportDocx(previewKind).then(function () { toast("Pobrano plik DOCX."); })
+        .catch(function (err) { toast("Błąd: " + (err.message || err), "err"); })
+        .then(busyStop);
+      return;
+    }
+    if (act === "preview-txt") {
+      busyStart("Generuję TXT…");
+      exportTxt(previewKind).then(function () { toast("Pobrano plik TXT."); })
+        .catch(function (err) { toast("Błąd: " + (err.message || err), "err"); })
+        .then(busyStop);
+      return;
+    }
+    if (act === "one-docx" || act === "one-pdf" || act === "one-txt") {
+      const kind = target.getAttribute("data-kind");
+      if (act === "one-docx") {
+        busyStart("Generuję DOCX…");
+        exportDocx(kind).then(function () { toast("Pobrano " + kind + ".docx"); })
+          .catch(function (err) { toast("Błąd: " + (err.message || err), "err"); })
+          .then(busyStop);
+      } else if (act === "one-txt") {
+        busyStart("Generuję TXT…");
+        exportTxt(kind).then(function () { toast("Pobrano " + kind + ".txt"); })
+          .catch(function (err) { toast("Błąd: " + (err.message || err), "err"); })
+          .then(busyStop);
+      } else {
+        busyStart("Przygotowuję wydruk…");
+        printDoc(kind).catch(function (err) { toast("Błąd: " + (err.message || err), "err"); }).then(busyStop);
+      }
+      return;
+    }
+    if (act === "all-docx") return allDocx();
+    if (act === "all-txt") return allTxt();
+    if (act === "all-zip") return allZip();
+    if (act === "run-check") return runCheck();
+    if (act === "reload-engine") {
+      enginePromise = null;
+      engine.state = "idle";
+      render();
+      return;
+    }
+    if (act === "activate") {
+      const key = ($("#lic-key") || {}).value || "";
+      const holder = ($("#lic-holder") || {}).value || "";
+      busyStart("Sprawdzam klucz…");
+      window.PABLicense.activate(key, holder)
+        .then(function (status) {
+          licence = status;
+          toast("Licencja aktywowana: " + status.summary, "ok");
+          render();
+        })
+        .catch(function (err) {
+          toast(err.message || String(err), "err");
+        })
+        .then(busyStop);
+      return;
+    }
+    if (act === "deactivate") {
+      if (!confirm("Usunąć zapisany klucz licencyjny?")) return;
+      window.PABLicense.deactivate().then(function (status) {
+        licence = status;
+        toast("Klucz został usunięty.");
+        render();
+      });
+      return;
+    }
+  }
+
+  function onChange(event) {
+    const target = event.target;
+    if (target.matches("[data-bind]")) return bindField(target);
+    if (target.matches("[data-list]")) return bindList(target);
+    if (target.matches("[data-row]")) return bindRow(target);
+  }
+
+  function onInput(event) {
+    const target = event.target;
+    if (target.matches("input[data-bind], textarea[data-bind], select[data-bind]")) {
+      return bindField(target);
+    }
+    if (target.matches("input[data-row], textarea[data-row], select[data-row]")) {
+      return bindRow(target);
+    }
+  }
+
+  function onFile(event) {
+    const input = event.target;
+    if (input.getAttribute("data-act") !== "import") return;
+    const file = input.files && input.files[0];
+    if (!file) return;
+    busyStart("Wczytuję projekt…");
+    const reader = new FileReader();
+    reader.onload = function () {
+      try {
+        const data = JSON.parse(String(reader.result));
+        ensureEngine()
+          .then(function () { return window.PABEngine.merge(data); })
+          .then(function (merged) {
+            setProject(merged, "Projekt wczytany z pliku.");
+            go("dane/ogolne");
+          })
+          .catch(function () {
+            setProject(data, "Projekt wczytany z pliku (bez uzupełnienia brakujących pól).");
+            go("dane/ogolne");
+          })
+          .then(busyStop);
+      } catch (err) {
+        busyStop();
+        toast("Nie udało się odczytać pliku JSON.", "err");
+      }
+    };
+    reader.onerror = function () {
+      busyStop();
+      toast("Nie udało się odczytać pliku.", "err");
+    };
+    reader.readAsText(file, "utf-8");
+    input.value = "";
+  }
+
+  // --- start ---------------------------------------------------------------
+
+  function mount() {
+    const app = document.getElementById("app");
+    app.innerHTML =
+      '<header class="topbar">' +
+      '<a class="brand" href="#/start"><span class="logo">PAB</span>' +
+      '<span class="brand-text"><strong>' + esc(F.app.name) + "</strong><small>" + esc(F.app.tagline) + "</small></span></a>" +
+      '<div class="topbar-tools">' +
+      '<span class="chip" id="engine-chip">silnik: nieuruchomiony</span>' +
+      '<span id="lic-badge"></span>' +
+      '<span class="chip save" id="save-state">zapis lokalny</span>' +
+      "</div>" +
+      "</header>" +
+      '<nav class="steps" id="steps"></nav>' +
+      '<main id="view"></main>' +
+      '<footer class="footer">' +
+      '<span>' + esc(F.app.credit) + " · " + esc(F.app.company) + "</span>" +
+      '<span><a href="#/licencja">Licencja</a> · <a href="#/o-programie">O programie</a> · ' +
+      '<a href="#/dokumenty">Dokumenty</a></span>' +
+      "</footer>";
+
+    document.addEventListener("click", onClick);
+    document.addEventListener("change", onChange);
+    document.addEventListener("input", onInput);
+    document.addEventListener("change", onFile);
+    window.addEventListener("hashchange", render);
+
+    const stored = loadProject();
+    project = stored || emptyProject();
+    if (!stored) saveProject(true);
+
+    window.PABLicense.status()
+      .then(function (status) {
+        licence = status;
+        render();
+      })
+      .catch(function () {
+        licence = { valid: true, licensed: false, state: "trial", short: "licencja", summary: "", trialDaysLeft: 0, trialDays: 30, key: "", holder: "", perpetual: false, expires: "", durationDays: null, activated: "", serial: null, trialEnd: "", maskedKey: "" };
+        render();
+      });
+
+    ensureEngine().catch(function () {
+      /* błąd pokaże się na stronach wymagających silnika */
+    });
+
+    render();
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", mount);
+  } else {
+    mount();
+  }
+})();
