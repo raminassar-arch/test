@@ -8,6 +8,16 @@ Sites. Dokumenty powstają w przeglądarce użytkownika.
 Wersja desktopowa (`src\`, `dist\PAB-cyfrowa.exe`) i serwerowa (`web\`) pozostają
 nietknięte – ten katalog jest całkowicie niezależny.
 
+## Adres publikacji
+
+| Co | Adres |
+| --- | --- |
+| Aplikacja | https://raminassar-arch.github.io/test/ |
+| Pomocnik osadzania (Google Sites) | https://raminassar-arch.github.io/test/embed.html |
+| Repozytorium | https://github.com/raminassar-arch/test |
+
+Hosting: GitHub Pages, gałąź `main`, katalog główny (`/`).
+
 ---
 
 ## Jak to działa
