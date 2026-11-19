@@ -28,7 +28,7 @@ Hosting: GitHub Pages, gałąź `main`, katalog główny (`/`).
 | Formularze | `js\fields.js` | wygenerowany z `src\ui_specs.py` – jedno źródło definicji pól |
 | DOCX | `js\docx.js`, `js\zip.js` | zapis OOXML i archiwum ZIP w czystym JavaScripcie |
 | Podgląd i wydruk | `js\render.js` | podgląd HTML oraz samodzielny dokument A4 do druku / PDF |
-| Licencja | `js\license.js` | HMAC-SHA256 przez Web Crypto, te same klucze `PAB-…` |
+| Płatności | `js\payment.js` | dostęp do PDF/DOCX per dokument; linki do uzupełnienia |
 | Interfejs | `js\app.js`, `app.css`, `index.html` | routing, formularze, eksport, kontrola |
 
 Kluczowa decyzja: **teksty prawne nie są przepisane na JavaScript**. `content.py`
@@ -86,7 +86,7 @@ js\fields.js
 js\zip.js
 js\docx.js
 js\render.js
-js\license.js
+js\payment.js
 js\boot.js
 js\app.js
 ```
@@ -118,14 +118,14 @@ Po wstawieniu rozciągnij blok na całą szerokość i ustaw wysokość ok. 900�
 
 ### Ograniczenia osadzenia
 
-* **Pamięć przeglądarki.** Projekt i stan licencji są zapisywane
+* **Pamięć przeglądarki.** Projekt i stan dostępu do płatnych plików są zapisywane
   w `localStorage`. W części przeglądarek (Safari, tryb prywatny) pamięć jest
   blokowana dla stron osadzonych w obcej domenie – program działa, ale dane nie
   zapisują się między odświeżeniami.
 * **Zalecenie:** w Google Sites umieść przede wszystkim odnośnik
   „Otwórz PAB cyfrowa” (samodzielna karta), a osadzenie traktuj jako podgląd.
-* Pobrane pliki DOCX/ZIP trafiają do pobranych przeglądarki – Google Sites
-  nie pośredniczy w ich zapisie.
+* Pobrane pliki DOCX oraz wydruk PDF trafiają do pobranych przeglądarki –
+  Google Sites nie pośredniczy w ich zapisie.
 
 ---
 
@@ -145,9 +145,9 @@ Skrypt:
 * wypisuje liczbę pól, grup i wersję.
 
 Następnie **podnieś numer wersji w odnośnikach `?v=`** w `index.html`
-(`app.css?v=1.5.2`, `js\app.js?v=1.5.2`, …). Bez tego przeglądarki użytkowników
-mogą trzymać stare pliki z pamięci podręcznej. Numer wersji bierz z
-`src\ui_specs.py` (`APP_VERSION`).
+(`app.css?v=1.6.0`, `js\app.js?v=1.6.0`, …). Bez tego przeglądarki użytkowników
+mogą trzymać stare pliki z pamięci podręcznej. Wersja `1.6.0` oznacza wersję
+statyczną z płatnościami za dokumenty (bez licencji i bez TXT).
 
 ---
 
@@ -162,10 +162,7 @@ python sites\parity_check.py <katalog_z_pobranymi_docx>
 # 2. Zrzut wzorcowych akapitów i tabel z wersji desktopowej (do porównania w przeglądarce)
 python sites\parity_dump.py
 
-# 3. Sumy SHA-256 tekstów TXT z wersji desktopowej
-python sites\parity_txt.py
-
-# 4. Kontrola paczki ZIP pobranej z przeglądarki (DOCX otwierane przez python-docx)
+# 3. Kontrola paczki ZIP pobranej z wersji desktopowej (DOCX przez python-docx)
 python sites\check_zip.py <paczka.zip>
 ```
 
@@ -178,23 +175,32 @@ porównania w przeglądarce – nie jest potrzebny do działania aplikacji.
 
 ---
 
-## Licencja
+## Płatności za dokumenty
 
-* Okres próbny: **30 dni** od pierwszego uruchomienia (liczony lokalnie).
-* Klucze są **te same** co w wersji desktopowej i web:
-  `PAB-XXXX-XXXX-XXXX-XXXX-XXXX`, podpis HMAC-SHA256, rodzaje: bezterminowy,
-  data końcowa, N dni od aktywacji.
-* Weryfikacja odbywa się w przeglądarce (Web Crypto). Aktywacja nie wymaga
-  internetu.
-* Stan licencji: `localStorage` pod kluczem `pab.sites.license.v1`
-  (`first_run`, `last_seen`, `key`, `holder`, `activated`).
+Wersja statyczna (GitHub Pages / Google Sites) **nie ma licencji ani okresu
+próbnego**. Zamiast tego każdy dokument jest płatny osobno:
 
-**Ograniczenie, o którym trzeba wiedzieć:** w wersji statycznej sekret HMAC
-znajduje się w kodzie JavaScript, więc osoba techniczna może wygenerować
-własny klucz lub wyczyścić `localStorage`. Jest to nieuniknione w aplikacji
-działającej wyłącznie w przeglądarce. Wersje desktopowa i web przechowują stan
-dodatkowo w systemie i są znacznie trudniejsze do obejścia. Jeśli ochrona
-licencyjna ma być wiążąca, należy udostępniać wersję desktopową lub web.
+| Wariant | Cena |
+| --- | --- |
+| PDF + DOCX tego samego dokumentu | **40 zł** |
+| sam PDF | **20 zł** |
+| sam DOCX | **25 zł** |
+
+Wersja desktopowa (`dist\PAB-cyfrowa.exe`) i wersja web (`web\`) zachowują
+dotychczasową licencję kluczami `PAB-…` – zmiany nie dotyczą tych wersji.
+
+### Konfiguracja linków płatności
+
+W `js\payment.js` znajdują się trzy **placeholdery** w obiekcie `LINKS`
+(klucze `bundle`, `pdf`, `docx`). Przed udostępnieniem trzeba podmienić je na
+prawdziwe adresy (PayU, Przelewy24, PayPal.me, BLIK itp.). Obsługiwane tokeny:
+`{kind}` (identyfikator dokumentu, np. `PZT`) i `{amount}` (kwota).
+
+Aplikacja jest w pełni statyczna, więc nie weryfikuje przelewu sama. Po powrocie
+ze strony płatności użytkownik klika **„Opłacone – odblokuj pliki”**, co zapisuje
+dostęp w `localStorage` tej przeglądarki (`pab.sites.paid.v1`). Jest to rozwiązanie
+zaufaniowe – do rzeczywistej weryfikacji potrzebny byłby backend lub callback
+dostawcy płatności. Wyczyszczenie danych witryny usuwa dostęp.
 
 ---
 
@@ -203,11 +209,11 @@ licencyjna ma być wiążąca, należy udostępniać wersję desktopową lub web
 | Format | Sposób | Uwagi |
 | --- | --- | --- |
 | DOCX | `js\docx.js` + `js\zip.js` | pełna zgodność z Wordem, LibreOffice i Google Docs; stylizacja jak w wersji desktopowej |
-| TXT | `exporters.txt_text()` przez Pyodide | UTF-8 z BOM, końce linii CRLF |
 | PDF | okno druku przeglądarki | A4 (`@page`), marginesy 25/20/22/25 mm, „Zapisz jako PDF” |
-| ZIP | `js\zip.js` | wszystkie dokumenty DOCX + TXT w jednej paczce |
 
-Nazwy plików: `PZT_2026.11.18.docx` itd. – identyczne z wersją desktopową.
+TXT oraz zbiorczy ZIP **nie są dostępne** w wersji publicznej (zostały usunięte
+z interfejsu; silnik nadal zawiera `txt()` na potrzeby zgodności kodu). Nazwy
+plików: `PZT_2026.11.18.docx` itd. – identyczne z wersją desktopową.
 
 ---
 
@@ -228,13 +234,12 @@ sites\
     zip.js          CRC32 i zapis ZIP (metoda „store”)
     docx.js         zapis OOXML (stylizacja jak w exporters.py)
     render.js       podgląd HTML i dokument do druku
-    license.js      weryfikacja kluczy (Web Crypto)
+    payment.js      płatności za dokumenty (linki + dostęp w localStorage)
     boot.js         Pyodide + mostek do content.py/exporters.py
-    app.js          interfejs: routing, formularze, eksport, licencja
+    app.js          interfejs: routing, formularze, eksport, płatności
   build_site.py     regeneracja fields.js i kopii silnika
   parity_check.py   porównanie DOCX z wersją desktopową
   parity_dump.py    zrzut wzorca desktopowego do JSON
-  parity_txt.py     sumy TXT wersji desktopowej
   check_zip.py      kontrola pobranej paczki ZIP
 ```
 

@@ -1,6 +1,6 @@
 /* ==========================================================================
    PAB cyfrowa – wersja Google Sites
-   app.js – interfejs: routing, formularze, podgląd, eksport, licencja.
+   app.js – interfejs: routing, formularze, podgląd, eksport, płatności.
    Wszystkie dane projektu są przechowywane lokalnie w przeglądarce
    (localStorage). Nic nie jest wysyłane na serwer.
    ========================================================================== */
@@ -11,7 +11,6 @@
   const PROJECT_KEY = "pab.sites.project.v1";
 
   let project = null;
-  let licence = null;
   let engine = { state: "idle", error: "" }; // idle | loading | ready | error
   let enginePromise = null;
   let saveTimer = null;
@@ -239,25 +238,6 @@
     chip.className = "chip engine " + engine.state;
   }
 
-  // --- licencja ------------------------------------------------------------
-
-  function licenceBadge() {
-    if (!licence) return '<span class="badge">licencja: …</span>';
-    const cls = licence.valid ? (licence.licensed ? "ok" : "trial") : "bad";
-    return (
-      '<a class="badge ' + cls + '" href="#/licencja" title="' + esc(licence.summary) + '">' +
-      esc(licence.short) +
-      "</a>"
-    );
-  }
-
-  function gate() {
-    if (!licence) return true;
-    if (licence.valid) return true;
-    const head = route()[0];
-    return head === "licencja" || head === "o-programie";
-  }
-
   // --- routing -------------------------------------------------------------
 
   function route() {
@@ -288,7 +268,6 @@
     obiekty: "Obiekty",
     dokumenty: "Dokumenty",
     zalaczniki: "Załączniki",
-    licencja: "Licencja",
     "o-programie": "O programie",
   };
 
@@ -312,7 +291,7 @@
       '<div class="hero-text">' +
       "<h1>Dokumentacja do pozwolenia na budowę</h1>" +
       "<p>PZT, PAB, wniosek, oświadczenie, informacja i plan BIOZ oraz wykaz załączników – " +
-      "wypełnij dane raz, a program przygotuje komplet dokumentów w formatach DOCX, PDF i TXT.</p>" +
+      "wypełnij dane raz, a program przygotuje komplet dokumentów w formatach DOCX i PDF.</p>" +
       '<div class="hero-actions">' +
       '<button class="btn primary" data-act="new">Nowy projekt</button>' +
       '<button class="btn" data-act="demo">Wczytaj przykład</button>' +
@@ -337,7 +316,7 @@
       card("bilans", "Bilans i obiekty", "Powierzchnie, wskaźniki i wykaz obiektów.", "bilans") +
       card("zal", "Załączniki", "Dokumenty i pliki dołączane do wniosku.", "zalaczniki") +
       card("preview", "Podgląd", "Zobacz gotową treść dokumentu.", "podglad") +
-      card("export", "Eksport", "DOCX, PDF i TXT – pojedynczo lub zbiorczo.", "eksport") +
+      card("export", "Eksport", "DOCX i PDF – płatne osobno za każdy dokument.", "eksport") +
       card("check", "Kontrola", "Sprawdź kompletność i spójność danych.", "kontrola") +
       "</section>" +
 
@@ -688,39 +667,69 @@
       "</select>" +
       '<button class="btn small" data-act="preview-print">Drukuj / PDF</button>' +
       '<button class="btn small" data-act="preview-docx">DOCX</button>' +
-      '<button class="btn small" data-act="preview-txt">TXT</button>' +
       "</div></div>" +
       '<div id="preview-stage" class="preview-stage"><div class="panel"><p>Wybierz dokument i poczekaj na wczytanie silnika…</p></div></div>'
     );
   }
 
+  function priceCard(title, price, note) {
+    return (
+      '<div class="price-card">' +
+      '<span class="price-name">' + esc(title) + "</span>" +
+      '<strong class="price-value">' + price + " zł</strong>" +
+      '<span class="price-note">' + esc(note || "za dokument") + "</span>" +
+      "</div>"
+    );
+  }
+
+  function accessText(st) {
+    if (st.pdf && st.docx) return "PDF + DOCX opłacone";
+    if (st.pdf) return "opłacony PDF";
+    if (st.docx) return "opłacony DOCX";
+    return "brak dostępu";
+  }
+
   function viewExport() {
+    const P = window.PABPayment.PRICES;
     return (
       '<div class="page-head"><div><h1>Eksport dokumentacji</h1>' +
-      "<p>Wybierz dokumenty i format. Wszystko powstaje w Twojej przeglądarce.</p></div></div>" +
+      "<p>Płatność jest przypisana do pojedynczego dokumentu. Po opłaceniu pliki pobierzesz od razu w tej przeglądarce.</p></div></div>" +
+      '<section class="panel pay-intro">' +
+      '<h2>Cennik – każdy dokument osobno</h2>' +
+      '<div class="price-grid">' +
+      priceCard("PDF + DOCX", P.bundle, "najkorzystniej") +
+      priceCard("Sam PDF", P.pdf, "wydruk A4 do pliku") +
+      priceCard("Sam DOCX", P.docx, "edytowalny w Wordzie") +
+      "</div>" +
+      '<p class="small muted">TXT nie jest dostępny w tej wersji. Projekt możesz zapisać jako JSON na stronie startowej.</p>' +
+      (window.PABPayment.configured()
+        ? ""
+        : '<p class="small err">Linki płatności nie są jeszcze skonfigurowane — do uzupełnienia w <code>js/payment.js</code>.</p>') +
+      "</section>" +
       '<section class="panel">' +
-      '<div class="export-list">' +
+      '<h2>Dokumenty</h2>' +
+      '<div class="pay-list">' +
       (F.dokumenty || [])
         .map(function (pair) {
+          const kind = pair[0];
+          const st = window.PABPayment.status(kind);
           return (
-            '<label class="export-item"><input type="checkbox" data-export="' + pair[0] + '" checked>' +
-            "<span><strong>" + esc(pair[1]) + "</strong></span>" +
-            '<span class="export-links">' +
-            '<button class="link" data-act="one-docx" data-kind="' + pair[0] + '">DOCX</button>' +
-            '<button class="link" data-act="one-pdf" data-kind="' + pair[0] + '">PDF</button>' +
-            '<button class="link" data-act="one-txt" data-kind="' + pair[0] + '">TXT</button>' +
-            "</span></label>"
+            '<div class="pay-doc">' +
+            '<div class="pay-doc-head"><strong>' + esc(pair[1]) + "</strong>" +
+            '<span class="pay-state' + ((st.pdf || st.docx) ? " ok" : "") + '">' + accessText(st) + "</span></div>" +
+            '<div class="pay-doc-actions">' +
+            '<button class="btn small" data-act="dl-docx" data-kind="' + esc(kind) + '"' + (st.docx ? "" : " disabled") + ">DOCX</button>" +
+            '<button class="btn small" data-act="dl-pdf" data-kind="' + esc(kind) + '"' + (st.pdf ? "" : " disabled") + ">PDF</button>" +
+            '<button class="link" data-act="buy" data-kind="' + esc(kind) + '" data-opt="bundle">PDF+DOCX · ' + P.bundle + " zł</button>" +
+            '<button class="link" data-act="buy" data-kind="' + esc(kind) + '" data-opt="pdf">PDF · ' + P.pdf + " zł</button>" +
+            '<button class="link" data-act="buy" data-kind="' + esc(kind) + '" data-opt="docx">DOCX · ' + P.docx + " zł</button>" +
+            "</div></div>"
           );
         })
         .join("") +
       "</div>" +
-      '<div class="row-actions">' +
-      '<button class="btn primary" data-act="all-docx">Pobierz wszystkie DOCX</button>' +
-      '<button class="btn" data-act="all-txt">Pobierz wszystkie TXT</button>' +
-      '<button class="btn" data-act="all-zip">Paczka ZIP (DOCX + TXT)</button>' +
-      "</div>" +
       '<p class="small muted">PDF powstaje przez okno druku przeglądarki – wybierz „Zapisz jako PDF”. ' +
-      "Pliki DOCX są w pełni edytowalne w Wordzie, LibreOffice i Google Docs.</p>" +
+      "Dostęp zapisuje się w tej przeglądarce (localStorage).</p>" +
       "</section>"
     );
   }
@@ -732,66 +741,6 @@
       '<div class="head-actions"><button class="btn small" data-act="run-check">Sprawdź ponownie</button></div></div>' +
       '<div id="check-stage"><div class="panel"><p>Uruchamiam kontrolę…</p></div></div>'
     );
-  }
-
-  function viewLicencja() {
-    if (!licence) return '<div class="panel"><p>Wczytywanie stanu licencji…</p></div>';
-    const state = licence.state;
-    const cls = licence.valid ? (licence.licensed ? "ok" : "trial") : "bad";
-    return (
-      '<div class="page-head"><div><h1>Licencja</h1>' +
-      "<p>Program działa 30 dni w wersji próbnej, a następnie wymaga klucza.</p></div></div>" +
-      '<section class="panel licence ' + cls + '">' +
-      "<h2>" + esc(licence.summary) + "</h2>" +
-      '<div class="lic-grid">' +
-      stat("Stan", stateLabel(state)) +
-      stat("Okres próbny do", fmtDate(licence.trialEnd)) +
-      stat("Pozostało dni", String(licence.state === "licensed" ? (licence.daysLeft === null ? "bezterminowo" : licence.daysLeft) : licence.trialDaysLeft)) +
-      (licence.key ? stat("Klucz", licence.maskedKey) : "") +
-      (licence.holder ? stat("Licencjobiorca", licence.holder) : "") +
-      (licence.expires ? stat("Ważna do", fmtDate(licence.expires)) : "") +
-      (licence.serial ? stat("Nr seryjny", String(licence.serial)) : "") +
-      "</div>" +
-      (licence.error ? '<p class="small err">' + esc(licence.error) + "</p>" : "") +
-      "</section>" +
-
-      '<section class="panel">' +
-      "<h2>Aktywacja klucza</h2>" +
-      '<div class="grid">' +
-      '<div class="field wide"><label class="field-label">Klucz licencyjny</label>' +
-      '<input type="text" id="lic-key" placeholder="PAB-XXXX-XXXX-XXXX-XXXX-XXXX" autocomplete="off" spellcheck="false"></div>' +
-      '<div class="field"><label class="field-label">Licencjobiorca (opcjonalnie)</label>' +
-      '<input type="text" id="lic-holder" placeholder="np. Pracownia XYZ"></div>' +
-      "</div>" +
-      '<div class="row-actions">' +
-      '<button class="btn primary" data-act="activate">Aktywuj klucz</button>' +
-      (licence.key ? '<button class="btn danger" data-act="deactivate">Usuń klucz</button>' : "") +
-      "</div>" +
-      '<p class="small muted">Klucz jest sprawdzany lokalnie (HMAC-SHA256). Aktywacja nie wymaga internetu.</p>' +
-      "</section>" +
-
-      '<section class="panel"><h3>Uwaga o wersji przeglądarkowej</h3>' +
-      '<p class="small">W tej wersji stan licencji jest przechowywany w pamięci przeglądarki (localStorage). ' +
-      "Wyczyszczenie danych witryny usuwa zapis – wersja desktopowa i web przechowują stan dodatkowo w systemie.</p></section>"
-    );
-  }
-
-  function stateLabel(state) {
-    return (
-      {
-        trial: "wersja próbna",
-        trial_expired: "okres próbny upłynął",
-        licensed: "licencja pełna",
-        expired: "licencja wygasła",
-        invalid: "klucz nieprawidłowy",
-      }[state] || state
-    );
-  }
-
-  function fmtDate(isoText) {
-    if (!isoText) return "—";
-    const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(isoText);
-    return m ? m[3] + "." + m[2] + "." + m[1] : isoText;
   }
 
   function viewAbout() {
@@ -827,19 +776,11 @@
   function render() {
     if (!project) project = emptyProject();
 
-    if (!gate()) {
-      if (location.hash !== "#/licencja") {
-        location.hash = "#/licencja";
-        return;
-      }
-    }
-
     const parts = route();
     const head = parts[0];
     const view = $("#view");
     if (!view) return;
 
-    $("#lic-badge").innerHTML = licenceBadge();
     updateEngineChip();
 
     let html = "";
@@ -852,7 +793,6 @@
     else if (head === "podglad" || head === "preview") html = viewPreview();
     else if (head === "eksport" || head === "export") html = viewExport();
     else if (head === "kontrola" || head === "check") html = viewCheck();
-    else if (head === "licencja") html = viewLicencja();
     else if (head === "o-programie") html = viewAbout();
     else html = viewStart();
 
@@ -978,18 +918,6 @@
       });
   }
 
-  function exportTxt(kind) {
-    return ensureEngine()
-      .then(function () {
-        return window.PABEngine.txt(kind, project);
-      })
-      .then(function (text) {
-        return window.PABEngine.filename(kind, project).then(function (base) {
-          download("\ufeff" + text.replace(/\r?\n/g, "\r\n"), base + ".txt", "text/plain;charset=utf-8");
-        });
-      });
-  }
-
   function printDoc(kind) {
     return ensureEngine()
       .then(function () {
@@ -1026,91 +954,93 @@
       });
   }
 
-  function selectedKinds() {
-    return $$('[data-export]')
-      .filter(function (box) { return box.checked; })
-      .map(function (box) { return box.getAttribute("data-export"); });
+  function hasAccess(kind, format) {
+    return window.PABPayment.isUnlocked(kind, format);
   }
 
-  function allDocx() {
-    const kinds = selectedKinds();
-    if (!kinds.length) return toast("Zaznacz co najmniej jeden dokument.", "err");
-    busyStart("Generuję dokumenty DOCX…");
-    ensureEngine()
-      .then(function () {
-        return kinds.reduce(function (chain, kind) {
-          return chain.then(function () { return exportDocx(kind); });
-        }, Promise.resolve());
-      })
-      .then(function () {
-        toast("Gotowe – pobrano " + kinds.length + " plików DOCX.");
-      })
-      .catch(function (err) {
-        toast("Błąd eksportu: " + (err.message || err), "err");
-      })
+  function downloadDocx(kind) {
+    if (!hasAccess(kind, "docx")) return openPayModal(kind, "docx");
+    busyStart("Generuję DOCX…");
+    exportDocx(kind)
+      .then(function () { toast("Pobrano " + kind + ".docx"); })
+      .catch(function (err) { toast("Błąd eksportu: " + (err.message || err), "err"); })
       .then(busyStop);
   }
 
-  function allTxt() {
-    const kinds = selectedKinds();
-    if (!kinds.length) return toast("Zaznacz co najmniej jeden dokument.", "err");
-    busyStart("Generuję pliki TXT…");
-    ensureEngine()
-      .then(function () {
-        return kinds.reduce(function (chain, kind) {
-          return chain.then(function () { return exportTxt(kind); });
-        }, Promise.resolve());
-      })
-      .then(function () {
-        toast("Gotowe – pobrano " + kinds.length + " plików TXT.");
-      })
-      .catch(function (err) {
-        toast("Błąd eksportu: " + (err.message || err), "err");
-      })
+  function downloadPdf(kind) {
+    if (!hasAccess(kind, "pdf")) return openPayModal(kind, "pdf");
+    busyStart("Przygotowuję wydruk…");
+    printDoc(kind)
+      .catch(function (err) { toast("Błąd: " + (err.message || err), "err"); })
       .then(busyStop);
   }
 
-  function allZip() {
-    const kinds = selectedKinds();
-    if (!kinds.length) return toast("Zaznacz co najmniej jeden dokument.", "err");
-    busyStart("Buduję paczkę ZIP…");
-    ensureEngine()
-      .then(function () {
-        const entries = [];
-        return kinds
-          .reduce(function (chain, kind) {
-            return chain
-              .then(function () {
-                return window.PABEngine.build(kind, project).then(function (doc) {
-                  return window.PABEngine.filename(kind, project).then(function (base) {
-                    entries.push({ name: base + ".docx", data: docxBytes(doc) });
-                  });
-                });
-              })
-              .then(function () {
-                return window.PABEngine.txt(kind, project).then(function (text) {
-                  return window.PABEngine.filename(kind, project).then(function (base) {
-                    entries.push({
-                      name: base + ".txt",
-                      data: new TextEncoder().encode("\ufeff" + text.replace(/\r?\n/g, "\r\n")),
-                    });
-                  });
-                });
-              });
-          }, Promise.resolve())
-          .then(function () {
-            return entries;
-          });
-      })
-      .then(function (entries) {
-        const zip = window.PABZip.zip(entries);
-        download(zip, "PAB-dokumentacja-" + todayISO().replace(/\./g, "-") + ".zip", "application/zip");
-        toast("Gotowe – paczka ZIP zawiera " + entries.length + " plików.");
-      })
-      .catch(function (err) {
-        toast("Błąd eksportu: " + (err.message || err), "err");
-      })
-      .then(busyStop);
+  /* --- bramka płatności ---------------------------------------------------- */
+
+  const OPTION_LABEL = {
+    bundle: "PDF + DOCX",
+    pdf: "sam PDF",
+    docx: "sam DOCX",
+  };
+
+  function openPayModal(kind, suggested) {
+    closePayModal();
+    const P = window.PABPayment.PRICES;
+    const label = window.PABPayment.label(kind);
+    const box = document.createElement("div");
+    box.id = "pay-modal";
+    box.className = "pay-modal";
+    box.innerHTML =
+      '<div class="pay-modal-card">' +
+      '<button class="pay-close" data-act="pay-close" aria-label="Zamknij">×</button>' +
+      "<h2>Pobierz: " + esc(label) + "</h2>" +
+      '<p class="small">Wybierz wariant płatności dla tego dokumentu. Link otworzy się w nowej karcie.</p>' +
+      '<div class="price-grid">' +
+      priceCard("PDF + DOCX", P.bundle, "najkorzystniej") +
+      priceCard("Sam PDF", P.pdf, "wydruk A4 do pliku") +
+      priceCard("Sam DOCX", P.docx, "edytowalny w Wordzie") +
+      "</div>" +
+      '<div class="pay-modal-options">' +
+      ["bundle", "pdf", "docx"]
+        .map(function (opt) {
+          const active = opt === suggested ? " primary" : "";
+          return (
+            '<button class="btn' + active + '" data-act="pay-go" data-kind="' + esc(kind) +
+            '" data-opt="' + opt + '">Kup ' + OPTION_LABEL[opt] + " · " + P[opt] + " zł</button>"
+          );
+        })
+        .join("") +
+      "</div>" +
+      '<div class="pay-confirm">' +
+      '<button class="link" data-act="pay-done" data-kind="' + esc(kind) + '" data-opt="' + esc(suggested || "bundle") +
+      '">Opłacone – odblokuj pliki</button>' +
+      '<p class="small muted">Wersja statyczna nie weryfikuje przelewu sama. Po zapłacie kliknij przycisk powyżej; ' +
+      "dostęp zapisze się w localStorage tej przeglądarki.</p>" +
+      "</div>" +
+      "</div>";
+    document.body.appendChild(box);
+  }
+
+  function closePayModal() {
+    const old = $("#pay-modal");
+    if (old && old.parentNode) old.parentNode.removeChild(old);
+  }
+
+  function payGo(kind, option) {
+    const url = window.PABPayment.url(kind, option);
+    if (!window.PABPayment.configured() || !url) {
+      toast("Skonfiguruj linki płatności w js/payment.js.", "err");
+      return;
+    }
+    window.open(url, "_blank", "noopener");
+    toast("Otworzono stronę płatności. Po zapłacie kliknij „Opłacone”.", "ok");
+  }
+
+  function payDone(kind, option) {
+    window.PABPayment.markPaid(kind, option);
+    closePayModal();
+    toast("Dostęp odblokowany: " + OPTION_LABEL[option] + ".", "ok");
+    render();
   }
 
   // --- kontrola ------------------------------------------------------------
@@ -1302,78 +1232,33 @@
       render();
       return;
     }
-    if (act === "preview-print") {
-      busyStart("Przygotowuję wydruk…");
-      printDoc(previewKind).catch(function (err) {
-        toast("Błąd: " + (err.message || err), "err");
-      }).then(busyStop);
-      return;
-    }
-    if (act === "preview-docx") {
-      busyStart("Generuję DOCX…");
-      exportDocx(previewKind).then(function () { toast("Pobrano plik DOCX."); })
-        .catch(function (err) { toast("Błąd: " + (err.message || err), "err"); })
-        .then(busyStop);
-      return;
-    }
-    if (act === "preview-txt") {
-      busyStart("Generuję TXT…");
-      exportTxt(previewKind).then(function () { toast("Pobrano plik TXT."); })
-        .catch(function (err) { toast("Błąd: " + (err.message || err), "err"); })
-        .then(busyStop);
-      return;
-    }
-    if (act === "one-docx" || act === "one-pdf" || act === "one-txt") {
+    if (act === "preview-print") return downloadPdf(previewKind);
+    if (act === "preview-docx") return downloadDocx(previewKind);
+    if (act === "dl-pdf" || act === "dl-docx") {
       const kind = target.getAttribute("data-kind");
-      if (act === "one-docx") {
-        busyStart("Generuję DOCX…");
-        exportDocx(kind).then(function () { toast("Pobrano " + kind + ".docx"); })
-          .catch(function (err) { toast("Błąd: " + (err.message || err), "err"); })
-          .then(busyStop);
-      } else if (act === "one-txt") {
-        busyStart("Generuję TXT…");
-        exportTxt(kind).then(function () { toast("Pobrano " + kind + ".txt"); })
-          .catch(function (err) { toast("Błąd: " + (err.message || err), "err"); })
-          .then(busyStop);
-      } else {
-        busyStart("Przygotowuję wydruk…");
-        printDoc(kind).catch(function (err) { toast("Błąd: " + (err.message || err), "err"); }).then(busyStop);
-      }
+      return act === "dl-pdf" ? downloadPdf(kind) : downloadDocx(kind);
+    }
+    if (act === "buy") {
+      openPayModal(target.getAttribute("data-kind"), target.getAttribute("data-opt"));
       return;
     }
-    if (act === "all-docx") return allDocx();
-    if (act === "all-txt") return allTxt();
-    if (act === "all-zip") return allZip();
+    if (act === "pay-go") {
+      payGo(target.getAttribute("data-kind"), target.getAttribute("data-opt"));
+      return;
+    }
+    if (act === "pay-done") {
+      payDone(target.getAttribute("data-kind"), target.getAttribute("data-opt"));
+      return;
+    }
+    if (act === "pay-close") {
+      closePayModal();
+      return;
+    }
     if (act === "run-check") return runCheck();
     if (act === "reload-engine") {
       enginePromise = null;
       engine.state = "idle";
       render();
-      return;
-    }
-    if (act === "activate") {
-      const key = ($("#lic-key") || {}).value || "";
-      const holder = ($("#lic-holder") || {}).value || "";
-      busyStart("Sprawdzam klucz…");
-      window.PABLicense.activate(key, holder)
-        .then(function (status) {
-          licence = status;
-          toast("Licencja aktywowana: " + status.summary, "ok");
-          render();
-        })
-        .catch(function (err) {
-          toast(err.message || String(err), "err");
-        })
-        .then(busyStop);
-      return;
-    }
-    if (act === "deactivate") {
-      if (!confirm("Usunąć zapisany klucz licencyjny?")) return;
-      window.PABLicense.deactivate().then(function (status) {
-        licence = status;
-        toast("Klucz został usunięty.");
-        render();
-      });
       return;
     }
   }
@@ -1439,7 +1324,6 @@
       '<span class="brand-text"><strong>' + esc(F.app.name) + "</strong><small>" + esc(F.app.tagline) + "</small></span></a>" +
       '<div class="topbar-tools">' +
       '<span class="chip" id="engine-chip">silnik: nieuruchomiony</span>' +
-      '<span id="lic-badge"></span>' +
       '<span class="chip save" id="save-state">zapis lokalny</span>' +
       "</div>" +
       "</header>" +
@@ -1447,7 +1331,7 @@
       '<main id="view"></main>' +
       '<footer class="footer">' +
       '<span>' + esc(F.app.credit) + " · " + esc(F.app.company) + "</span>" +
-      '<span><a href="#/licencja">Licencja</a> · <a href="#/o-programie">O programie</a> · ' +
+      '<span><a href="#/eksport">Płatności</a> · <a href="#/o-programie">O programie</a> · ' +
       '<a href="#/dokumenty">Dokumenty</a></span>' +
       "</footer>";
 
@@ -1460,16 +1344,6 @@
     const stored = loadProject();
     project = stored || emptyProject();
     if (!stored) saveProject(true);
-
-    window.PABLicense.status()
-      .then(function (status) {
-        licence = status;
-        render();
-      })
-      .catch(function () {
-        licence = { valid: true, licensed: false, state: "trial", short: "licencja", summary: "", trialDaysLeft: 0, trialDays: 30, key: "", holder: "", perpetual: false, expires: "", durationDays: null, activated: "", serial: null, trialEnd: "", maskedKey: "" };
-        render();
-      });
 
     ensureEngine().catch(function () {
       /* błąd pokaże się na stronach wymagających silnika */

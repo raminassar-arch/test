@@ -1327,7 +1327,7 @@ window.PAB_FIELDS = {
   [
    "export",
    "Eksport",
-   "DOCX, PDF i TXT"
+   "DOCX i PDF – płatne za dokument"
   ],
   [
    "check",

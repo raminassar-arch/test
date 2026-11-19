@@ -392,22 +392,63 @@ select.inline { width: auto; min-width: 260px; }
 .stat span { display: block; font-size: 0.72rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.03em; }
 .stat strong { display: block; font-size: 1rem; color: var(--green-deep); }
 
-/* --- eksport ------------------------------------------------------------- */
+/* --- eksport / płatności -------------------------------------------------- */
 
-.export-list { display: flex; flex-direction: column; gap: 2px; margin-bottom: 16px; }
-.export-item {
+.row-actions { display: flex; flex-wrap: wrap; gap: 9px; margin-top: 8px; }
+.price-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin: 14px 0; }
+.price-card {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--green-pale);
+}
+.price-name { font-size: 0.78rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.03em; }
+.price-value { font-size: 1.5rem; color: var(--green-deep); }
+.price-note { font-size: 0.72rem; color: var(--muted); }
+.pay-list { display: flex; flex-direction: column; gap: 8px; }
+.pay-doc { border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; background: #fff; }
+.pay-doc-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.pay-state { font-size: 0.75rem; color: var(--muted); }
+.pay-state.ok { color: var(--success); font-weight: 700; }
+.pay-doc-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 9px; }
+.pay-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 10px 8px;
-  border-bottom: 1px solid #eef3ed;
-  font-size: 0.9rem;
-  flex-wrap: wrap;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(5, 25, 18, 0.6);
 }
-.export-item input { accent-color: var(--green-mid); width: 17px; height: 17px; }
-.export-item span:first-of-type { flex: 1; min-width: 220px; }
-.export-links { display: flex; gap: 4px; }
-.row-actions { display: flex; flex-wrap: wrap; gap: 9px; margin-top: 8px; }
+.pay-modal-card {
+  position: relative;
+  width: min(620px, 100%);
+  max-height: 90vh;
+  overflow: auto;
+  background: #fff;
+  border-radius: 14px;
+  padding: 26px;
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.35);
+}
+.pay-modal-card h2 { margin: 0 0 8px; }
+.pay-close {
+  position: absolute;
+  top: 10px;
+  right: 14px;
+  border: 0;
+  background: none;
+  font-size: 1.8rem;
+  line-height: 1;
+  color: var(--muted);
+  cursor: pointer;
+}
+.pay-modal-options { display: flex; flex-wrap: wrap; gap: 8px; }
+.pay-confirm { margin-top: 16px; border-top: 1px solid var(--border); padding-top: 12px; }
+.pay-confirm p { margin: 8px 0 0; }
 
 /* --- kontrola ------------------------------------------------------------ */
 
@@ -423,11 +464,8 @@ select.inline { width: auto; min-width: 260px; }
 .issues li.error .tag { color: var(--danger); border-color: #e8c6c0; }
 .issues li.warn .tag { color: var(--gold-text); border-color: #e6d5a8; }
 
-/* --- licencja / o programie --------------------------------------------- */
+/* --- o programie -------------------------------------------------------- */
 
-.licence.ok { border-left: 5px solid var(--success); }
-.licence.trial { border-left: 5px solid var(--gold); }
-.licence.bad { border-left: 5px solid var(--danger); }
 .lic-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; margin-top: 12px; }
 .about-brand { display: flex; align-items: center; gap: 14px; margin-bottom: 14px; }
 .about-brand .logo { width: 56px; height: 56px; font-size: 1.1rem; }
