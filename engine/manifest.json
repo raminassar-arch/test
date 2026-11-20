@@ -2,7 +2,8 @@
  "files": {
   "content.py": "5310afc155d8d7d18de1908978cd787acb1c8e89e1f635819053b60372ab3679",
   "exporters.py": "0ff0fe9ddfd435e05006991e8e8d7001eebfdeb2cf0f9375e1a952e2de3b6fd9",
-  "word_import.py": "e98f4264436df67d473b0bd0198a4a1659425d6ef188a3d1cdf9ca84370b1dea"
+  "word_import.py": "12f11f13942a37a1a4aa69302a92eb4cea9fa4764f0ea4fcd22fbb23507317c0",
+  "pdf_import.py": "482b24b500a18e113a77b39d5881931762e01b9b3464784b76c75ff68ffcc06a"
  },
  "version": "1.5.2"
 }

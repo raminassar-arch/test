@@ -483,7 +483,7 @@ class ImportReport:
 
     def summary(self) -> str:
         if not self.matches:
-            return "Nie rozpoznano żadnych pól w dokumencie Word."
+            return "Nie rozpoznano żadnych pól w dokumencie."
         names = ", ".join(
             "%s.%s" % (m.section, m.key) for m in self.matches[:6])
         if len(self.matches) > 6:
@@ -711,6 +711,10 @@ def _add_candidate(report: ImportReport, seen: set[str], label: str,
     value = _clean_value(raw_value)
     if not value:
         return
+    # Pojedyncze kropki i znaki interpunkcyjne to w PDF-ach fragmenty spisu
+    # treści / linii wypełniających, a nie wartości pól.
+    if re.fullmatch(r"[.\s,…\-–—_]+", value):
+        return
     if len(value) <= 80 and _alias_key(value) in ALIAS_INDEX:
         return
     if _LIST_ITEM_RE.match(value):
@@ -832,6 +836,90 @@ def _scan_blocks(blocks: list[dict[str, Any]], report: ImportReport,
                     _add_candidate(report, seen, label, value, source)
 
 
+def _text_to_blocks(text: str) -> list[dict[str, Any]]:
+    """Zamienia tekst z PDF-a na bloki zgodne z :func:`_scan_blocks`.
+
+    PDF-y generowane przez PAB cyfrową (oraz większość dokumentów
+    „etykieta – wartość”) mają etykietę i wartość w tej samej linii, rozdzielone
+    kilkoma spacjami. Zamieniamy taką linię na wiersz tabeli, dzięki czemu
+    wielokrotnie użyty mechanizm dopasowań DOCX działa identycznie dla PDF.
+    """
+    text = text.replace("\f", "\n").replace("\r\n", "\n").replace("\r", "\n")
+    lines = [line.rstrip() for line in text.split("\n")]
+    blocks: list[dict[str, Any]] = []
+
+    def split_columns(line: str) -> list[str]:
+        return [cell.strip() for cell in re.split(r"\s{2,}", line.strip())
+                if cell.strip()]
+
+    def is_label(line: str) -> bool:
+        return bool(_alias_key(line) in ALIAS_INDEX)
+
+    def is_inline_label(line: str) -> bool:
+        match = _INLINE_RE.match(line)
+        return bool(match and _alias_key(match.group("label")) in ALIAS_INDEX)
+
+    i = 0
+    while i < len(lines):
+        line = lines[i].strip()
+        if not line:
+            i += 1
+            continue
+
+        cells = split_columns(line)
+        if len(cells) >= 2 and is_label(cells[0]):
+            blocks.append({"type": "tbl", "rows": [cells]})
+            i += 1
+            continue
+
+        if is_inline_label(line):
+            blocks.append({"type": "p", "text": line})
+            i += 1
+            continue
+
+        if is_label(line):
+            # Etykieta w osobnej linii – wartość może być wieloliniowa.
+            blocks.append({"type": "p", "text": line})
+            values: list[str] = []
+            j = i + 1
+            while j < len(lines) and len(values) < 8:
+                nxt = lines[j].strip()
+                if not nxt:
+                    break
+                ncells = split_columns(nxt)
+                if (len(ncells) >= 3
+                        or (len(ncells) >= 2 and is_label(ncells[0]))
+                        or is_label(nxt) or is_inline_label(nxt)):
+                    break
+                values.append(nxt)
+                j += 1
+            if values:
+                blocks.append({"type": "p", "text": "\n".join(values)})
+                i = j
+            else:
+                i += 1
+            continue
+
+        blocks.append({"type": "p", "text": line})
+        i += 1
+    return blocks
+
+
+def extract_text(text: str, source_name: str = "dokumentu") -> ImportReport:
+    """Wyciąga pola z już odczytanego tekstu (używane przez import PDF).
+
+    ``source_name`` trafia tylko do komunikatów dla użytkownika.
+    """
+    report = ImportReport()
+    _scan_blocks(_text_to_blocks(text or ""), report, set())
+    if not report.matches:
+        report.warnings.append(
+            "Nie znaleziono etykiet znanych pól w tekście %s. Sprawdź, czy "
+            "PDF zawiera tekst (nie jest skanem) i czy użyto np. „Inwestor:” "
+            "albo „Adres inwestycji:”." % source_name)
+    return report
+
+
 def extract_docx(source: Any) -> ImportReport:
     """Wyciąga rozpoznane wartości pól z dokumentu DOCX.
 
@@ -929,5 +1017,6 @@ def import_docx(source: Any, project: dict[str, Any] | None = None,
 
 __all__ = [
     "FIELD_SPECS", "FieldMatch", "ImportReport", "ALIASES",
-    "extract_docx", "apply_import", "import_docx", "verify_specs",
+    "extract_docx", "extract_text", "apply_import", "import_docx",
+    "verify_specs",
 ]

@@ -59,6 +59,10 @@
     "    report = _word.extract_docx('/pab/_import.docx')",
     "    return _dump(report.to_dict())",
     "",
+    "def pab_text_analyze(text):",
+    "    report = _word.extract_text(text, 'PDF')",
+    "    return _dump(report.to_dict())",
+    "",
     "def pab_word_apply(project_text, report_text, selected_text):",
     "    project = _json.loads(project_text)",
     "    report = _word.ImportReport.from_dict(_json.loads(report_text))",
@@ -196,6 +200,10 @@
         JSON.stringify(report),
         JSON.stringify(selected),
       ]).then(asJson);
+    },
+    /** Analizuje tekst wyciągnięty z PDF-a w przeglądarce (pdf.js). */
+    textAnalyze: function (text) {
+      return call("pab_text_analyze", [String(text || "")]).then(asJson);
     },
   };
 })();

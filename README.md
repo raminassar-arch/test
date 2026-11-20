@@ -258,6 +258,10 @@ sites\
   z dokumentu wygenerowanego przez PAB cyfrową). Po analizie wyświetlany jest
   raport rozpoznanych pól z checkboxami; zaakceptowane wartości uzupełniają
   projekt i pozostają edytowalne. DOCX i PDF można następnie wygenerować ponownie.
+* Przycisk **Z PDF** wczytuje wartości pól z tekstowego pliku `.pdf` (także
+  wyeksportowanego z PAB cyfrowej). Tekst jest wyciągany w przeglądarce przez
+  `pdf.js`, a rozpoznawanie etykiet odbywa się w tym samym silniku co przy
+  imporcie DOCX. Zeskanowane PDF-y wymagają OCR i nie są obsługiwane.
 * Część rysunkowa nie jest generowana – program przygotowuje opis i odwołuje się
   do rysunków.
 

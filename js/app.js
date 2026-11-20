@@ -297,6 +297,7 @@
       '<button class="btn" data-act="demo">Wczytaj przykład</button>' +
       '<label class="btn file">Import JSON<input type="file" accept=".json,application/json" data-act="import" hidden></label>' +
       '<label class="btn file">Z Worda<input type="file" accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document" data-act="import-word" hidden></label>' +
+      '<label class="btn file">Z PDF<input type="file" accept=".pdf,application/pdf" data-act="import-pdf" hidden></label>' +
       "</div>" +
       "</div>" +
       '<div class="hero-card">' +
@@ -1292,11 +1293,16 @@
   function onFile(event) {
     const input = event.target;
     const act = input.getAttribute("data-act");
-    if (act !== "import" && act !== "import-word") return;
+    if (act !== "import" && act !== "import-word" && act !== "import-pdf") return;
     const file = input.files && input.files[0];
     if (!file) return;
     if (act === "import-word") {
       importWordFile(file);
+      input.value = "";
+      return;
+    }
+    if (act === "import-pdf") {
+      importPdfFile(file);
       input.value = "";
       return;
     }
@@ -1329,7 +1335,78 @@
     input.value = "";
   }
 
-  // --- import pól z dokumentu Word ----------------------------------------
+  // --- import pól z dokumentów Word i PDF ---------------------------------
+
+  const PDFJS_VERSION = "3.11.174";
+  const PDFJS_BASE = "https://cdn.jsdelivr.net/npm/pdfjs-dist@" +
+    PDFJS_VERSION + "/build/";
+  let pdfJsPromise = null;
+
+  function loadPdfJs() {
+    if (window.pdfjsLib) return Promise.resolve(window.pdfjsLib);
+    if (pdfJsPromise) return pdfJsPromise;
+    pdfJsPromise = new Promise(function (resolve, reject) {
+      const tag = document.createElement("script");
+      tag.src = PDFJS_BASE + "pdf.min.js";
+      tag.async = true;
+      tag.onload = function () {
+        if (!window.pdfjsLib) {
+          reject(new Error("Nie udało się załadować pdf.js"));
+          return;
+        }
+        window.pdfjsLib.GlobalWorkerOptions.workerSrc =
+          PDFJS_BASE + "pdf.worker.min.js";
+        resolve(window.pdfjsLib);
+      };
+      tag.onerror = function () {
+        reject(new Error("Nie udało się pobrać pdf.js"));
+      };
+      document.head.appendChild(tag);
+    });
+    pdfJsPromise.catch(function () { pdfJsPromise = null; });
+    return pdfJsPromise;
+  }
+
+  /** Wyciąga tekst z PDF-a, odtwarzając układ kolumn spacjami. */
+  async function pdfToText(bytes) {
+    const lib = await loadPdfJs();
+    const task = lib.getDocument({ data: bytes.slice() });
+    const pdf = await task.promise;
+    const pages = [];
+    for (let number = 1; number <= pdf.numPages; number += 1) {
+      const page = await pdf.getPage(number);
+      const content = await page.getTextContent();
+      const rows = new Map();
+      content.items.forEach(function (item) {
+        if (!item.str || !item.str.trim() || !item.transform) return;
+        const y = Math.round(item.transform[5] / 2) * 2;
+        if (!rows.has(y)) rows.set(y, []);
+        rows.get(y).push(item);
+      });
+      const coords = Array.from(rows.keys()).sort(function (a, b) { return b - a; });
+      const lines = [];
+      coords.forEach(function (y) {
+        const row = rows.get(y).sort(function (a, b) {
+          return a.transform[4] - b.transform[4];
+        });
+        let line = "";
+        let previousEnd = null;
+        row.forEach(function (item) {
+          const text = String(item.str).replace(/\s+/g, " ").trim();
+          if (!text) return;
+          const x = item.transform[4];
+          if (previousEnd !== null && x - previousEnd > 6) line += "   ";
+          line += text;
+          previousEnd = x + (typeof item.width === "number"
+            ? item.width : text.length * 5);
+        });
+        if (line.trim()) lines.push(line.trim());
+      });
+      pages.push(lines.join("\n"));
+      page.cleanup();
+    }
+    return pages.join("\n");
+  }
 
   function importWordFile(file) {
     busyStart("Analizuję dokument Word…");
@@ -1355,18 +1432,46 @@
     reader.readAsArrayBuffer(file);
   }
 
+  function importPdfFile(file) {
+    busyStart("Analizuję dokument PDF…");
+    const reader = new FileReader();
+    reader.onload = function () {
+      pdfToText(new Uint8Array(reader.result))
+        .then(function (text) {
+          return ensureEngine().then(function () {
+            return window.PABEngine.textAnalyze(text);
+          });
+        })
+        .then(function (report) {
+          busyStop();
+          openWordModal(report, file.name, "PDF");
+        })
+        .catch(function (err) {
+          busyStop();
+          toast("Błąd analizy PDF: " + (err.message || err), "err");
+        });
+    };
+    reader.onerror = function () {
+      busyStop();
+      toast("Nie udało się odczytać pliku PDF.", "err");
+    };
+    reader.readAsArrayBuffer(file);
+  }
+
   function closeWordModal() {
     const old = $("#word-modal");
     if (old) old.remove();
   }
 
-  function openWordModal(report, fileName) {
+  function openWordModal(report, fileName, sourceLabel) {
     closeWordModal();
+    const label = sourceLabel || "Worda";
     const matches = report.matches || [];
     const box = document.createElement("div");
     box.id = "word-modal";
     box.className = "pay-modal";
     box._report = report;
+    box._sourceLabel = label;
     let rows = "";
     matches.forEach(function (m, i) {
       let val = m.value;
@@ -1385,7 +1490,7 @@
     box.innerHTML =
       '<div class="pay-modal-card">' +
       '<button class="pay-close" data-act="word-close" aria-label="Zamknij">×</button>' +
-      "<h2>Import z Worda</h2>" +
+      "<h2>Import z " + esc(label) + "</h2>" +
       '<p class="small">Rozpoznano ' + (report.count || matches.length) +
       " pól w pliku " + esc(fileName || "") +
       ". Zaznacz te, które mają uzupełnić projekt.</p>" +
@@ -1410,7 +1515,7 @@
       .then(function (merged) {
         closeWordModal();
         setProject(merged, "Uzupełniono " + selected.filter(Boolean).length +
-          " pól z Worda.");
+          " pól z " + (box._sourceLabel || "Worda") + ".");
         go("dane/ogolne");
       })
       .catch(function (err) {
