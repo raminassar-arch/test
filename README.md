@@ -254,6 +254,10 @@ sites\
   ekran komputera.
 * Projekt zapisuje się automatycznie w `localStorage`; do przenoszenia służy
   **Zapisz projekt (JSON)** / **Wczytaj projekt**.
+* Przycisk **Z Worda** wczytuje wartości pól z dowolnego pliku `.docx` (również
+  z dokumentu wygenerowanego przez PAB cyfrową). Po analizie wyświetlany jest
+  raport rozpoznanych pól z checkboxami; zaakceptowane wartości uzupełniają
+  projekt i pozostają edytowalne. DOCX i PDF można następnie wygenerować ponownie.
 * Część rysunkowa nie jest generowana – program przygotowuje opis i odwołuje się
   do rysunków.
 

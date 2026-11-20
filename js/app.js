@@ -296,6 +296,7 @@
       '<button class="btn primary" data-act="new">Nowy projekt</button>' +
       '<button class="btn" data-act="demo">Wczytaj przykład</button>' +
       '<label class="btn file">Import JSON<input type="file" accept=".json,application/json" data-act="import" hidden></label>' +
+      '<label class="btn file">Z Worda<input type="file" accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document" data-act="import-word" hidden></label>' +
       "</div>" +
       "</div>" +
       '<div class="hero-card">' +
@@ -1254,6 +1255,14 @@
       closePayModal();
       return;
     }
+    if (act === "word-close") {
+      closeWordModal();
+      return;
+    }
+    if (act === "word-apply") {
+      applyWordImport();
+      return;
+    }
     if (act === "run-check") return runCheck();
     if (act === "reload-engine") {
       enginePromise = null;
@@ -1282,9 +1291,15 @@
 
   function onFile(event) {
     const input = event.target;
-    if (input.getAttribute("data-act") !== "import") return;
+    const act = input.getAttribute("data-act");
+    if (act !== "import" && act !== "import-word") return;
     const file = input.files && input.files[0];
     if (!file) return;
+    if (act === "import-word") {
+      importWordFile(file);
+      input.value = "";
+      return;
+    }
     busyStart("Wczytuję projekt…");
     const reader = new FileReader();
     reader.onload = function () {
@@ -1312,6 +1327,96 @@
     };
     reader.readAsText(file, "utf-8");
     input.value = "";
+  }
+
+  // --- import pól z dokumentu Word ----------------------------------------
+
+  function importWordFile(file) {
+    busyStart("Analizuję dokument Word…");
+    const reader = new FileReader();
+    reader.onload = function () {
+      ensureEngine()
+        .then(function () {
+          return window.PABEngine.wordAnalyze(new Uint8Array(reader.result));
+        })
+        .then(function (report) {
+          busyStop();
+          openWordModal(report, file.name);
+        })
+        .catch(function (err) {
+          busyStop();
+          toast("Błąd analizy DOCX: " + (err.message || err), "err");
+        });
+    };
+    reader.onerror = function () {
+      busyStop();
+      toast("Nie udało się odczytać pliku DOCX.", "err");
+    };
+    reader.readAsArrayBuffer(file);
+  }
+
+  function closeWordModal() {
+    const old = $("#word-modal");
+    if (old) old.remove();
+  }
+
+  function openWordModal(report, fileName) {
+    closeWordModal();
+    const matches = report.matches || [];
+    const box = document.createElement("div");
+    box.id = "word-modal";
+    box.className = "pay-modal";
+    box._report = report;
+    let rows = "";
+    matches.forEach(function (m, i) {
+      let val = m.value;
+      if (val instanceof Array) val = val.join(", ");
+      else if (typeof val === "boolean") val = val ? "tak" : "nie";
+      rows +=
+        '<label class="word-row">' +
+        '<input type="checkbox" data-word-index="' + i + '" checked>' +
+        "<span><strong>" + esc(m.label || (m.section + "." + m.key)) + "</strong>: " +
+        esc(String(val)) + "</span></label>";
+    });
+    if (!rows) rows = '<p class="small">Nie rozpoznano żadnych znanych pól.</p>';
+    const warnings = (report.warnings || []).length
+      ? '<p class="small word-warn">' + esc(report.warnings.join(" ")) + "</p>"
+      : "";
+    box.innerHTML =
+      '<div class="pay-modal-card">' +
+      '<button class="pay-close" data-act="word-close" aria-label="Zamknij">×</button>' +
+      "<h2>Import z Worda</h2>" +
+      '<p class="small">Rozpoznano ' + (report.count || matches.length) +
+      " pól w pliku " + esc(fileName || "") +
+      ". Zaznacz te, które mają uzupełnić projekt.</p>" +
+      '<div class="word-list">' + rows + "</div>" +
+      warnings +
+      '<div class="pay-modal-options">' +
+      '<button class="btn primary" data-act="word-apply"' +
+      (matches.length ? "" : " disabled") + ">Importuj zaznaczone</button>" +
+      '<button class="btn" data-act="word-close">Anuluj</button>' +
+      "</div></div>";
+    document.body.appendChild(box);
+  }
+
+  function applyWordImport() {
+    const box = $("#word-modal");
+    if (!box || !box._report) return;
+    const checks = Array.prototype.slice.call(
+      box.querySelectorAll("[data-word-index]"));
+    const selected = checks.map(function (c) { return c.checked; });
+    busyStart("Importuję pola…");
+    window.PABEngine.wordApply(project, box._report, selected)
+      .then(function (merged) {
+        closeWordModal();
+        setProject(merged, "Uzupełniono " + selected.filter(Boolean).length +
+          " pól z Worda.");
+        go("dane/ogolne");
+      })
+      .catch(function (err) {
+        toast("Błąd importu: " + (err.message || err), "err");
+      })
+      .then(busyStop);
   }
 
   // --- start ---------------------------------------------------------------

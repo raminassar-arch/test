@@ -16,6 +16,7 @@
     "import json as _json",
     "import content as _content",
     "import exporters as _exporters",
+    "import word_import as _word",
     "",
     "def _dump(obj):",
     "    return _json.dumps(obj, ensure_ascii=False, default=str)",
@@ -52,6 +53,21 @@
     "",
     "def pab_program():",
     "    return _exporters.PROGRAM_NAME",
+    "",
+    "# --- import pól z dokumentu Word ---------------------------------------",
+    "def pab_word_analyze():",
+    "    report = _word.extract_docx('/pab/_import.docx')",
+    "    return _dump(report.to_dict())",
+    "",
+    "def pab_word_apply(project_text, report_text, selected_text):",
+    "    project = _json.loads(project_text)",
+    "    report = _word.ImportReport.from_dict(_json.loads(report_text))",
+    "    allowed = {(s, k) for s, k, _l, _kd, _o in _word.FIELD_SPECS}",
+    "    report.matches = [m for m in report.matches if (m.section, m.key) in allowed]",
+    "    merged = _word.apply_import(project, report,",
+    "                                 selected=_json.loads(selected_text),",
+    "                                 overwrite=True)",
+    "    return _dump(merged)",
   ].join("\n");
 
   let instance = null;
@@ -98,10 +114,12 @@
       const sources = await Promise.all([
         fetchText("engine/content.py"),
         fetchText("engine/exporters.py"),
+        fetchText("engine/word_import.py"),
       ]);
       py.FS.mkdirTree("/pab");
       py.FS.writeFile("/pab/content.py", sources[0]);
       py.FS.writeFile("/pab/exporters.py", sources[1]);
+      py.FS.writeFile("/pab/word_import.py", sources[2]);
 
       note("Uruchamiam silnik dokumentów…");
       py.runPython('import sys\nif "/pab" not in sys.path:\n    sys.path.insert(0, "/pab")');
@@ -165,6 +183,19 @@
     },
     program: function () {
       return call("pab_program");
+    },
+    /** Analizuje bajty DOCX zapisane wcześniej w wirtualnym FS Pyodide. */
+    wordAnalyze: async function (bytes) {
+      const py = await init();
+      py.FS.writeFile("/pab/_import.docx", bytes);
+      return call("pab_word_analyze").then(asJson);
+    },
+    wordApply: function (project, report, selected) {
+      return call("pab_word_apply", [
+        JSON.stringify(project),
+        JSON.stringify(report),
+        JSON.stringify(selected),
+      ]).then(asJson);
     },
   };
 })();
