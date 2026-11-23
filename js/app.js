@@ -8,7 +8,27 @@
   "use strict";
 
   const F = window.PAB_FIELDS;
-  const PROJECT_KEY = "pab.sites.project.v1";
+  const LEGACY_PROJECT_KEY = "pab.sites.project.v1";
+  const PROJECT_PREFIX = LEGACY_PROJECT_KEY + "|";
+
+  function projectKey() {
+    const user = window.PABAuth && window.PABAuth.currentUser
+      ? window.PABAuth.currentUser() : "";
+    return PROJECT_PREFIX + (user || "gosc");
+  }
+
+  /** Stary projekt przejmuje tylko pierwsze konto z listy. */
+  function migrateLegacyProject() {
+    try {
+      const raw = localStorage.getItem(LEGACY_PROJECT_KEY);
+      const key = projectKey();
+      const users = window.PABAuth && window.PABAuth.users ? window.PABAuth.users() : [];
+      if (raw && !localStorage.getItem(key) && users.length &&
+          users[0].login === window.PABAuth.currentUser()) {
+        localStorage.setItem(key, raw);
+      }
+    } catch (err) { /* brak dostępu do pamięci */ }
+  }
 
   let project = null;
   let engine = { state: "idle", error: "" }; // idle | loading | ready | error
@@ -131,7 +151,7 @@
 
   function loadProject() {
     try {
-      const raw = localStorage.getItem(PROJECT_KEY);
+      const raw = localStorage.getItem(projectKey());
       if (!raw) return null;
       const data = JSON.parse(raw);
       return data && typeof data === "object" ? data : null;
@@ -144,7 +164,7 @@
     clearTimeout(saveTimer);
     const write = function () {
       try {
-        localStorage.setItem(PROJECT_KEY, JSON.stringify(project));
+        localStorage.setItem(projectKey(), JSON.stringify(project));
         const chip = $("#save-state");
         if (chip) {
           chip.textContent = "zapisano " + new Date().toLocaleTimeString("pl-PL");
@@ -1198,7 +1218,7 @@
     }
     if (act === "reset") {
       if (!confirm("Usunąć wszystkie dane projektu z tej przeglądarki?")) return;
-      localStorage.removeItem(PROJECT_KEY);
+      localStorage.removeItem(projectKey());
       setProject(emptyProject(), "Projekt wyczyszczony.");
       go("start");
       return;
@@ -1534,6 +1554,8 @@
 
   function mount() {
     const app = document.getElementById("app");
+    const who = window.PABAuth && window.PABAuth.displayName
+      ? window.PABAuth.displayName() : "";
     app.innerHTML =
       '<header class="topbar">' +
       '<a class="brand" href="#/start"><span class="logo">PAB</span>' +
@@ -1541,6 +1563,7 @@
       '<div class="topbar-tools">' +
       '<span class="chip" id="engine-chip">silnik: nieuruchomiony</span>' +
       '<span class="chip save" id="save-state">zapis lokalny</span>' +
+      (who ? '<span class="chip user" id="user-chip" title="Zalogowano jako ' + esc(who) + '">' + esc(who) + '</span>' : "") +
       '<button type="button" class="btn small" data-act="logout">Wyloguj</button>' +
       "</div>" +
       "</header>" +
@@ -1558,6 +1581,7 @@
     document.addEventListener("change", onFile);
     window.addEventListener("hashchange", render);
 
+    migrateLegacyProject();
     const stored = loadProject();
     project = stored || emptyProject();
     if (!stored) saveProject(true);

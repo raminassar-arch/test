@@ -29,6 +29,7 @@ Hosting: GitHub Pages, gałąź `main`, katalog główny (`/`).
 | DOCX | `js\docx.js`, `js\zip.js` | zapis OOXML i archiwum ZIP w czystym JavaScripcie |
 | Podgląd i wydruk | `js\render.js` | podgląd HTML oraz samodzielny dokument A4 do druku / PDF |
 | Płatności | `js\payment.js` | dostęp do PDF/DOCX per dokument; linki do uzupełnienia |
+| Konta | `accounts.json` | edytowalna lista użytkowników |
 | Ekran startowy | `js\auth.js` | logowanie przed uruchomieniem aplikacji |
 | Interfejs | `js\app.js`, `app.css`, `index.html` | routing, formularze, eksport, kontrola |
 
@@ -43,25 +44,42 @@ z pamięci podręcznej przeglądarki.
 
 ---
 
-## Logowanie (pierwsza strona)
+## Logowanie i konta (pierwsza strona)
 
 Aplikacja nie uruchamia się od razu – najpierw wyświetla ekran logowania.
-Dane dostępu są zdefiniowane na początku `js\auth.js` (`LOGIN`, `PASSWORD`)
-i domyślnie ustawione na **`Rami93` / `test`**. Zmiana któregokolwiek z nich
-unieważnia zapisaną sesję, ponieważ zapisywana jest tylko suma kontrolna
-loginu i hasła.
+Lista kont znajduje się w pliku **`accounts.json`** obok `index.html`. Plik jest
+edytowalny; domyślnie zawiera jedno konto **`Rami93` / `test`**:
+
+```json
+{
+  "users": [
+    {"login": "Rami93", "password": "test", "display": "Rami Nassar"},
+    {"login": "anna",   "password": "haslo1", "display": "Anna Kowalska"}
+  ]
+}
+```
+
+`display` to nazwa wyświetlana w pasku nagłówka. Po dodaniu konta wystarczy
+odświeżyć stronę (`accounts.json` jest pobierany przy każdym uruchomieniu).
+Zmiana hasła unieważnia zapisaną sesję tego konta, bo zapisywana jest tylko
+suma kontrolna loginu i hasła.
 
 * **„Zapamiętaj mnie na tym urządzeniu"** (domyślnie zaznaczone) zapisuje sesję
   w `localStorage` pod kluczem `pab.sites.auth.v1`. Bez zaznaczenia sesja trwa
   do zamknięcia karty (`sessionStorage`).
+* **Każde konto ma własny projekt** w `localStorage` pod kluczem
+  `pab.sites.project.v1|<login>`. Stary, wspólny projekt
+  (`pab.sites.project.v1`) jest jednorazowo przejmowany przez pierwsze konto
+  z listy. Nazwa zalogowanej osoby jest widoczna w pasku nagłówka.
 * Przycisk **„Wyloguj"** w prawym górnym rogu paska nagłówka czyści oba zapisy
   i przeładowuje stronę na ekran logowania.
 * Dostęp do płatnych plików (`pab.sites.paid.v1`) jest niezależny od logowania.
 
-> **Ważne:** w aplikacji statycznej login i hasło są widoczne w źródle strony.
-> Ekran logowania chroni przed przypadkowym wejściem, ale **nie jest zabezpieczeniem**
-> przed osobą techniczną. Jeśli dostęp ma być naprawdę ograniczony, trzeba go
-> ustawić na poziomie hostingu (np. HTTP Basic Auth w konfiguracji serwera).
+> **Ważne:** w aplikacji statycznej login i hasło są widoczne w źródle strony
+> i w pliku `accounts.json`. Ekran logowania chroni przed przypadkowym wejściem
+> i porządkuje projekty osób, ale **nie jest zabezpieczeniem** przed osobą
+> techniczną. Jeśli dostęp ma być naprawdę ograniczony, trzeba go ustawić
+> na poziomie hostingu (np. HTTP Basic Auth w konfiguracji serwera).
 
 ---
 
@@ -248,6 +266,7 @@ sites\
   app.css           motyw zielono-złoty, układ, podgląd A4
   embed.html        pomocnik: kod osadzenia w Google Sites + podgląd
   favicon.svg
+  accounts.json     lista kont (login, hasło, nazwa wyświetlana)
   engine\
     content.py      kopia src\content.py (teksty dokumentów)
     exporters.py    kopia src\exporters.py (TXT, nazwy plików)

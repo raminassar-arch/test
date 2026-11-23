@@ -1,17 +1,26 @@
 /* ==========================================================================
    PAB cyfrowa – ekran startowy z logowaniem (wersja statyczna).
 
-   UWAGA: w aplikacji statycznej login i hasło są widoczne w źródle strony.
-   Jest to brama dostępu, a nie zabezpieczenie przed osobą techniczną.
+   Konta są czytane z pliku accounts.json obok index.html. Można tam dodać
+   kolejne osoby, np.:
+
+     {"users": [
+       {"login": "Rami93", "password": "test", "display": "Rami Nassar"},
+       {"login": "anna", "password": "MOJE_HASLO", "display": "Anna Kowalska"}
+     ]}
+
+   UWAGA: w aplikacji statycznej login i hasło są widoczne w źródle i w pliku
+   accounts.json. Jest to wygodna brama dostępu, a nie zabezpieczenie przed
+   osobą techniczną. Osobne projekty są zapisywane pod kluczem z loginem.
    ========================================================================== */
 (function () {
   "use strict";
 
-  var LOGIN = "Rami93";
-  var PASSWORD = "test";
   var KEY = "pab.sites.auth.v1";
+  var ACCOUNTS_URL = "accounts.json?cb=" + Date.now();
+  var accounts = [];
 
-  /* Lekka suma kontrolna – zmiana hasła unieważnia zapisaną sesję. */
+  /* Lekka suma kontrolna – zmiana loginu lub hasła unieważnia zapisaną sesję. */
   function digest(text) {
     var h = 2166136261;
     for (var i = 0; i < text.length; i += 1) {
@@ -20,7 +29,43 @@
     }
     return (h >>> 0).toString(16);
   }
-  var TOKEN = LOGIN + "|" + digest(PASSWORD);
+
+  function tokenFor(user) {
+    return user.login + "|" + digest(user.login + "|" + user.password);
+  }
+
+  function validUsers(raw) {
+    var list = raw && raw.users;
+    if (!Array.isArray(list)) return [];
+    return list.filter(function (user) {
+      return user && typeof user.login === "string" && user.login &&
+        typeof user.password === "string" && user.password;
+    }).map(function (user) {
+      return {
+        login: user.login,
+        password: user.password,
+        display: user.display || user.login
+      };
+    });
+  }
+
+  var ready = fetch(ACCOUNTS_URL, { cache: "no-store" })
+    .then(function (response) {
+      if (!response.ok) throw new Error("HTTP " + response.status);
+      return response.json();
+    })
+    .then(function (raw) {
+      accounts = validUsers(raw);
+      if (!accounts.length) throw new Error("Brak kont w accounts.json");
+      return accounts;
+    });
+
+  function find(login) {
+    for (var i = 0; i < accounts.length; i += 1) {
+      if (accounts[i].login === login) return accounts[i];
+    }
+    return null;
+  }
 
   function esc(value) {
     return String(value == null ? "" : value).replace(/[&<>"']/g, function (c) {
@@ -28,24 +73,43 @@
     });
   }
 
-  function saved(store) {
+  /** Zwraca login tylko z poprawnej sesji zapisanej w danym magazynie. */
+  function validLogin(store) {
     try {
-      return store.getItem(KEY) === TOKEN;
+      var raw = store.getItem(KEY);
+      if (!raw) return "";
+      var cut = raw.indexOf("|");
+      if (cut < 1) return "";
+      var user = find(raw.slice(0, cut));
+      if (!user || raw.slice(cut + 1) !== digest(user.login + "|" + user.password)) {
+        return "";
+      }
+      return user.login;
     } catch (err) {
-      return false;
+      return "";
     }
   }
 
   function isAuthenticated() {
-    return saved(window.localStorage) || saved(window.sessionStorage);
+    return !!validLogin(window.localStorage) || !!validLogin(window.sessionStorage);
+  }
+
+  function currentUser() {
+    return validLogin(window.localStorage) || validLogin(window.sessionStorage) || "";
+  }
+
+  function displayName() {
+    var user = find(currentUser());
+    return user ? user.display : "";
   }
 
   function login(loginValue, passwordValue, remember) {
-    if (loginValue !== LOGIN || passwordValue !== PASSWORD) return false;
+    var user = find(String(loginValue || "").trim());
+    if (!user || user.password !== String(passwordValue || "")) return false;
     try {
       var keep = remember ? window.localStorage : window.sessionStorage;
       var drop = remember ? window.sessionStorage : window.localStorage;
-      keep.setItem(KEY, TOKEN);
+      keep.setItem(KEY, tokenFor(user));
       drop.removeItem(KEY);
     } catch (err) {
       /* Tryb prywatny – brak zapisu, ale logowanie na tę sesję działa. */
@@ -118,18 +182,36 @@
     });
   }
 
+  function showError(root, message) {
+    if (!root) return;
+    root.innerHTML =
+      '<div class="login-screen"><div class="login-panel">' +
+      '<div class="login-brand"><span class="login-logo">PAB</span>' +
+      "<h1>PAB cyfrowa</h1></div>" +
+      '<div class="login-card"><h2>Brak dostępu do kont</h2>' +
+      '<p class="login-sub">' + esc(message) + "</p></div></div></div>";
+  }
+
   /** Uruchamia aplikację tylko po pozytywnym logowaniu. */
   function gate(root, onSuccess) {
-    if (isAuthenticated()) {
-      onSuccess();
-    } else {
-      showLogin(root, onSuccess);
-    }
+    return ready.then(function () {
+      if (isAuthenticated()) {
+        if (typeof onSuccess === "function") onSuccess();
+      } else {
+        showLogin(root, onSuccess);
+      }
+    }).catch(function () {
+      showError(root, "Nie udało się wczytać listy kont (accounts.json). " +
+        "Sprawdź, czy aplikacja jest otwarta przez serwer HTTP.");
+    });
   }
 
   window.PABAuth = {
-    LOGIN: LOGIN,
     STORAGE_KEY: KEY,
+    ready: ready,
+    users: function () { return accounts.slice(); },
+    currentUser: currentUser,
+    displayName: displayName,
     isAuthenticated: isAuthenticated,
     login: login,
     logout: logout,
