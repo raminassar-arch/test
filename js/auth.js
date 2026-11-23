@@ -15,11 +15,12 @@
    i jest widoczne tylko na tym urządzeniu. Hasło konta lokalnego jest
    przechowywane jako skrót, nie jawny tekst.
 
-   OPCJONALNIE: właściciel może włączyć rejestr kont w swoim arkuszu
-   Google Sheets (REPORT_URL poniżej + google-sheets/rejestracje.gs).
-   Wysyłane są wtedy tylko login, nazwa wyświetlana, data i akcja
-   (rejestracja/usunięcie) – nigdy hasło. Formularz rejestracji pokazuje
-   o tym wyraźną informację.
+   Rejestr zdarzeń kont (rejestracja/usunięcie) trafia do darmowego,
+   publicznego magazynu JSON (REGISTRY_URL poniżej) – bez zakładania kont,
+   logowania i usług Google. Wysyłane są tylko login, nazwa wyświetlana,
+   data i akcja – nigdy hasło. Formularz rejestracji pokazuje o tym wyraźną
+   informację. Właściciel odczytuje rejestr przez API (GET) albo prosząc
+   asystenta o wyświetlenie wpisów.
 
    Konto lokalne można usunąć przyciskiem „Usuń konto” w pasku nagłówka –
    znika wtedy konto i jego projekt z tej przeglądarki (bezpowrotnie).
@@ -37,9 +38,13 @@
   var LOCAL_KEY = "pab.sites.accounts.local.v1";
   var ACCOUNTS_URL = "accounts.json?cb=" + Date.now();
 
-  /* URL wdrożonej aplikacji Google Apps Script (patrz google-sheets/rejestracje.gs).
-     Puste = rejestr wyłączony. Można też nadpisać przez window.PAB_REPORT_URL. */
-  var REPORT_URL = "https://script.google.com/macros/s/AKfycbxfW6ebiclcKj4-YvOfQ3oT_eiA6eMelxorUIJ2qIk7zUIFBB1YcDnhB7dP1X81sO3M8A/exec";
+  /* Jeden obiekt-indeks w darmowym magazynie JSON (restful-api.dev) zawiera
+     tablicę wszystkich zdarzeń w data.events – lista obiektów API jest
+     zawodna, odczyt po ID działa pewnie. Bez konta, logowania i Google.
+     Puste = rejestr wyłączony. Nadpisanie: window.PAB_REGISTRY_URL. */
+  var REGISTRY_URL = "https://api.restful-api.dev/objects/ff808181a09d98f701a208ef3a5d28bd";
+  var REGISTRY_NAME = "pabcyfrowa-reg-index-v1";
+  var REGISTRY_LIMIT = 500;
   var accounts = [];          // konta z pliku accounts.json
   var localAccounts = [];     // konta utworzone w tej przeglądarce
 
@@ -189,38 +194,53 @@
     return true;
   }
 
-  function reportUrl() {
-    return window.PAB_REPORT_URL || REPORT_URL;
+  function registryUrl() {
+    return window.PAB_REGISTRY_URL || REGISTRY_URL;
   }
 
-  /* Zgłoszenie zdarzenia konta (rejestracja/usunięcie) do arkusza właściciela.
-     Tylko login, nazwa wyświetlana, data i akcja – bez hasła. Nie blokuje
-     operacji na koncie. sendBeacon przeżywa przeładowanie strony (usuwanie
-     konta przeładowuje widok), fetch jest rozwiązaniem zapasowym. */
+  /* Zgłoszenie zdarzenia konta (rejestracja/usunięcie) do rejestru właściciela.
+     Tylko login, nazwa wyświetlana, data i akcja – bez hasła. Odczytujemy
+     obiekt-indeks po ID, dodajemy zdarzenie i zapisujemy go z keepalive,
+     żeby przeładowanie strony nie ucięło wysyłki. Zwraca promise. */
+  var pendingReport = null;
   function reportEvent(user, action) {
-    var url = reportUrl();
-    if (!url) return;
-    var payload = JSON.stringify({
+    var url = registryUrl();
+    if (!url) return null;
+    var event = {
       login: user.login,
       display: user.display,
       date: new Date().toISOString(),
       src: "sites",
       action: action
+    };
+    pendingReport = fetch(url).then(function (response) {
+      return response.json();
+    }).then(function (current) {
+      var events = (current && current.data && Array.isArray(current.data.events))
+        ? current.data.events : [];
+      events.push(event);
+      return fetch(url, {
+        method: "PUT",
+        keepalive: true,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: REGISTRY_NAME,
+          data: { events: events.slice(-REGISTRY_LIMIT) }
+        })
+      });
+    }).catch(function () { /* brak sieci nie może blokować operacji na koncie */ });
+    return pendingReport;
+  }
+
+  /* Czeka na domknięcie wysyłki (najwyżej timeoutMs), żeby przekierowanie
+     lub przeładowanie strony nie ucięło zgłoszenia. Nie zgłasza błędów sieci. */
+  function flushReports(timeoutMs) {
+    var pending = pendingReport;
+    pendingReport = null;
+    var limit = new Promise(function (resolve) {
+      window.setTimeout(resolve, timeoutMs || 1500);
     });
-    try {
-      if (navigator.sendBeacon) {
-        var blob = new Blob([payload], { type: "text/plain;charset=UTF-8" });
-        if (navigator.sendBeacon(url, blob)) return;
-      }
-    } catch (err) { /* przechodzimy do fetch */ }
-    try {
-      fetch(url, {
-        method: "POST",
-        mode: "no-cors",
-        headers: { "Content-Type": "text/plain;charset=UTF-8" },
-        body: payload
-      }).catch(function () { /* brak sieci nie może blokować operacji na koncie */ });
-    } catch (err) { /* ignorujemy */ }
+    return Promise.race([pending || Promise.resolve(), limit]);
   }
 
   /* Rejestracja konta lokalnego. Zwraca {ok:true} albo {ok:false, error:"…"}. */
@@ -381,10 +401,10 @@
       "<h2>Utwórz konto</h2>" +
       '<p class="login-sub">Nowe konto dostanie własny, osobny projekt. ' +
       "Zapisze się tylko w tej przeglądarce na tym urządzeniu.</p>" +
-      (reportUrl()
+      (registryUrl()
         ? '<p class="login-hint">Właściciel strony prowadzi rejestr nowych kont: ' +
-          "przy rejestracji wysyłamy login, nazwę wyświetlaną i datę do jego arkusza " +
-          "Google (bez hasła).</p>"
+          "przy rejestracji wysyłamy login, nazwę wyświetlaną i datę do jego rejestru " +
+          "(bez hasła).</p>"
         : "") +
       '<div class="login-error" id="register-error" role="alert" hidden></div>' +
       '<label class="field"><span class="field-label">Login</span>' +
@@ -433,7 +453,9 @@
       }
       registerError.hidden = true;
       login(name, password, remember);
-      if (typeof onSuccess === "function") onSuccess();
+      flushReports(1500).then(function () {
+        if (typeof onSuccess === "function") onSuccess();
+      });
     });
   }
 
@@ -490,7 +512,8 @@
     logout: logout,
     showLogin: showLogin,
     showRegister: showRegister,
-    reportEnabled: function () { return !!reportUrl(); },
+    reportEnabled: function () { return !!registryUrl(); },
+    flushReports: flushReports,
     gate: gate,
     registerGate: registerGate
   };

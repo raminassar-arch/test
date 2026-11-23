@@ -1247,7 +1247,9 @@
         localStorage.removeItem(projectKey());
         const result = window.PABAuth.deleteAccount();
         if (!result.ok) { toast(result.error, "err"); return; }
-        window.location.reload();
+        window.PABAuth.flushReports(1500).then(function () {
+          window.location.reload();
+        });
       });
       return;
     }

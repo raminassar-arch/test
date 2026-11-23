@@ -78,28 +78,30 @@ nie jawny tekst. Konta z `accounts.json` są wspólne dla wszystkich urządzeń;
 konta lokalne – nie. Login: 3–32 znaki (litery angielskie, cyfry, `.`, `-`, `_`),
 hasło: min. 4 znaki.
 
-### Opcjonalnie: rejestr nowych kont w Google Sheets
+### Rejestr nowych kont i usunięć (bez Google, bez konfiguracji)
 
-Domyślnie właściciel strony **nie widzi**, kto tworzy konta lokalne (są tylko
-w przeglądarkach tych osób). Można to zmienić bez własnego serwera:
+Konta lokalne istnieją tylko w przeglądarkach tych osób, ale właściciel strony
+może widzieć, kto zakłada i usuwa konta. Służy do tego **darmowy, publiczny
+magazyn JSON** (`https://api.restful-api.dev/objects`) – bez zakładania kont,
+logowania, wdrożeń i usług Google. Działa od razu po publikacji strony.
 
-1. Utwórz arkusz w Google Sheets, np. „PAB cyfrowa – rejestracje”.
-2. *Rozszerzenia → Apps Script*, wklej zawartość pliku
-   **`google-sheets/rejestracje.gs`** z tego katalogu, zapisz.
-3. *Wdróż → Nowe wdrożenie → Aplikacja internetowa*: „Wykonaj jako” = Ja,
-   „Kto ma dostęp” = Każdy. Skopiuj URL wdrożenia (kończy się na `/exec`).
-4. Wklej ten URL w `js/auth.js` w zmiennej `REPORT_URL` (na początku pliku)
-   i opublikuj zmianę.
+Każda rejestracja oraz **usunięcie konta lokalnego** wysyła osobny wpis:
+data (UTC), login, nazwa wyświetlana, źródło, akcja („rejestracja” / „usunięcie”).
+**Hasło nigdy nie jest wysyłane** – zostaje wyłącznie w przeglądarce użytkownika.
+Formularz rejestracji pokazuje wyraźną informację o rejestrze. Wysyłka używa
+`fetch` z `keepalive`, więc przeżywa przeładowanie strony po usunięciu konta.
 
-Od tej pory każda nowa rejestracja oraz **usunięcie konta lokalnego** dopisze
-wiersz w zakładce „Rejestracje”: data (UTC), login, nazwa wyświetlana, źródło,
-akcja („rejestracja” / „usunięcie”). **Hasło nigdy nie jest wysyłane**
-– zostaje wyłącznie w przeglądarce użytkownika. Formularz rejestracji pokazuje
-wtedy wyraźną informację o rejestrze (login, nazwa i data trafiają do arkusza
-właściciela). Puste `REPORT_URL` = rejestr wyłączony, nic nie jest wysyłane.
-Jeśli aktualizujesz skrypt w istniejącym projekcie Apps Script, po zapisaniu
-wybierz *Wdróż → Zarządzaj wdrożeniami → edytuj → Wersja: Nowa wersja → Wdróż*
-– ten sam URL `/exec` zacznie używać nowego kodu.
+Właściciel odczytuje rejestr na dwa sposoby:
+
+* prosi asystenta: „pokaż rejestracje PAB” – asystent pobiera i wyświetla wpisy;
+* samodzielnie: `GET https://api.restful-api.dev/objects/ff808181a09d98f701a208ef3a5d28bd`
+  – wpisy są w `data.events` (zachowywane jest ostatnie 500 zdarzeń).
+
+Adres magazynu zmienia się w `js/auth.js` (`REGISTRY_URL` na początku pliku);
+pusty adres = rejestr wyłączony. Uwaga: to magazyn publiczny – wpisy (loginy
+i nazwy, bez haseł) są odczytywalne przez każdego, kto zna adres API; nie nadaje
+się do danych wrażliwych. Przy niemal równoczesnych rejestracjach może dojść do
+zagubienia jednego wpisu (magazyn nie ma operacji „dodaj do listy”).
 
 * **„Zapamiętaj mnie na tym urządzeniu"** (domyślnie zaznaczone) zapisuje sesję
   w `localStorage` pod kluczem `pab.sites.auth.v1`. Bez zaznaczenia sesja trwa
@@ -309,8 +311,6 @@ sites\
   embed.html        pomocnik: kod osadzenia w Google Sites + podgląd
   favicon.svg
   accounts.json     lista kont (login, hasło, nazwa wyświetlana)
-  google-sheets\
-    rejestracje.gs  skrypt Apps Script: rejestr nowych kont w Google Sheets
   engine\
     content.py      kopia src\content.py (teksty dokumentów)
     exporters.py    kopia src\exporters.py (TXT, nazwy plików)
