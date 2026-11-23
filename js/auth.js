@@ -15,10 +15,15 @@
    i jest widoczne tylko na tym urządzeniu. Hasło konta lokalnego jest
    przechowywane jako skrót, nie jawny tekst.
 
-   OPCJONALNIE: właściciel może włączyć rejestr nowych kont w swoim arkuszu
+   OPCJONALNIE: właściciel może włączyć rejestr kont w swoim arkuszu
    Google Sheets (REPORT_URL poniżej + google-sheets/rejestracje.gs).
-   Wysyłane są wtedy tylko login, nazwa wyświetlana i data – nigdy hasło.
-   Formularz rejestracji pokazuje o tym wyraźną informację.
+   Wysyłane są wtedy tylko login, nazwa wyświetlana, data i akcja
+   (rejestracja/usunięcie) – nigdy hasło. Formularz rejestracji pokazuje
+   o tym wyraźną informację.
+
+   Konto lokalne można usunąć przyciskiem „Usuń konto” w pasku nagłówka –
+   znika wtedy konto i jego projekt z tej przeglądarki (bezpowrotnie).
+   Kont z accounts.json nie usuwa się z poziomu strony.
 
    UWAGA: w aplikacji statycznej login i hasło kont z accounts.json są widoczne
    w źródle i w pliku accounts.json. Jest to wygodna brama dostępu, a nie
@@ -34,7 +39,7 @@
 
   /* URL wdrożonej aplikacji Google Apps Script (patrz google-sheets/rejestracje.gs).
      Puste = rejestr wyłączony. Można też nadpisać przez window.PAB_REPORT_URL. */
-  var REPORT_URL = "";
+  var REPORT_URL = "https://script.google.com/macros/s/AKfycbxfW6ebiclcKj4-YvOfQ3oT_eiA6eMelxorUIJ2qIk7zUIFBB1YcDnhB7dP1X81sO3M8A/exec";
   var accounts = [];          // konta z pliku accounts.json
   var localAccounts = [];     // konta utworzone w tej przeglądarce
 
@@ -188,23 +193,33 @@
     return window.PAB_REPORT_URL || REPORT_URL;
   }
 
-  /* Zgłoszenie nowej rejestracji do arkusza właściciela (fire-and-forget).
-     Tylko login, nazwa wyświetlana i data – bez hasła. Nie blokuje rejestracji. */
-  function reportRegistration(user) {
+  /* Zgłoszenie zdarzenia konta (rejestracja/usunięcie) do arkusza właściciela.
+     Tylko login, nazwa wyświetlana, data i akcja – bez hasła. Nie blokuje
+     operacji na koncie. sendBeacon przeżywa przeładowanie strony (usuwanie
+     konta przeładowuje widok), fetch jest rozwiązaniem zapasowym. */
+  function reportEvent(user, action) {
     var url = reportUrl();
     if (!url) return;
+    var payload = JSON.stringify({
+      login: user.login,
+      display: user.display,
+      date: new Date().toISOString(),
+      src: "sites",
+      action: action
+    });
+    try {
+      if (navigator.sendBeacon) {
+        var blob = new Blob([payload], { type: "text/plain;charset=UTF-8" });
+        if (navigator.sendBeacon(url, blob)) return;
+      }
+    } catch (err) { /* przechodzimy do fetch */ }
     try {
       fetch(url, {
         method: "POST",
         mode: "no-cors",
         headers: { "Content-Type": "text/plain;charset=UTF-8" },
-        body: JSON.stringify({
-          login: user.login,
-          display: user.display,
-          date: new Date().toISOString(),
-          src: "sites"
-        })
-      }).catch(function () { /* brak sieci nie może blokować rejestracji */ });
+        body: payload
+      }).catch(function () { /* brak sieci nie może blokować operacji na koncie */ });
     } catch (err) { /* ignorujemy */ }
   }
 
@@ -238,7 +253,7 @@
       return { ok: false, error: "Nie udało się zapisać konta w pamięci przeglądarki. " +
         "Sprawdź, czy nie jesteś w trybie prywatnym." };
     }
-    reportRegistration(user);
+    reportEvent(user, "rejestracja");
     return { ok: true, user: user };
   }
 
@@ -249,6 +264,42 @@
     } catch (err) {
       /* Ignorujemy brak dostępu do pamięci. */
     }
+  }
+
+  /** Czy konto (domyślnie bieżące) jest kontem lokalnym tej przeglądarki. */
+  function isLocalAccount(loginName) {
+    var login = loginName || currentUser();
+    if (!login) return false;
+    for (var i = 0; i < localAccounts.length; i += 1) {
+      if (localAccounts[i].login === login) return true;
+    }
+    return false;
+  }
+
+  /* Usuwa zalogowane konto lokalne wraz z sesją. Projekt usuwa aplikacja
+     (app.js) przed wywołaniem tej funkcji. Konta z accounts.json może
+     usunąć tylko właściciel strony, edytując plik.
+     Zwraca {ok:true} albo {ok:false, error:"…"}. */
+  function deleteAccount() {
+    var login = currentUser();
+    if (!login) return { ok: false, error: "Brak zalogowanego konta." };
+    var idx = -1;
+    for (var i = 0; i < localAccounts.length; i += 1) {
+      if (localAccounts[i].login === login) { idx = i; break; }
+    }
+    if (idx < 0) {
+      return { ok: false, error: "To konto pochodzi z pliku accounts.json – " +
+        "może je usunąć tylko właściciel strony." };
+    }
+    var user = localAccounts[idx];
+    localAccounts.splice(idx, 1);
+    if (!saveLocal()) {
+      localAccounts.splice(idx, 0, user);
+      return { ok: false, error: "Nie udało się zapisać zmiany w pamięci przeglądarki." };
+    }
+    reportEvent(user, "usunięcie");
+    logout();
+    return { ok: true };
   }
 
   function appInfo() {
@@ -434,6 +485,8 @@
     isAuthenticated: isAuthenticated,
     login: login,
     register: register,
+    isLocalAccount: isLocalAccount,
+    deleteAccount: deleteAccount,
     logout: logout,
     showLogin: showLogin,
     showRegister: showRegister,

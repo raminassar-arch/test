@@ -1239,6 +1239,18 @@
       });
       return;
     }
+    if (act === "delete-account") {
+      const login = window.PABAuth.currentUser();
+      askConfirm("Usunąć konto „" + login + "” razem z jego projektem zapisanym " +
+        "w tej przeglądarce? Tej operacji nie można cofnąć.", "Usuń konto").then(function (ok) {
+        if (!ok) return;
+        localStorage.removeItem(projectKey());
+        const result = window.PABAuth.deleteAccount();
+        if (!result.ok) { toast(result.error, "err"); return; }
+        window.location.reload();
+      });
+      return;
+    }
     if (act === "new") {
       askConfirm("Utworzyć nowy, pusty projekt? Bieżące dane zostaną zastąpione.", "Nowy projekt").then(function (ok) {
         if (!ok) return;
@@ -1611,6 +1623,9 @@
       '<span class="chip" id="engine-chip">silnik: nieuruchomiony</span>' +
       '<span class="chip save" id="save-state">zapis lokalny</span>' +
       (who ? '<span class="chip user" id="user-chip" title="Zalogowano jako ' + esc(who) + '">' + esc(who) + '</span>' : "") +
+      (window.PABAuth && window.PABAuth.isLocalAccount && window.PABAuth.isLocalAccount()
+        ? '<button type="button" class="btn small danger" data-act="delete-account" ' +
+          'title="Usuwa konto i jego projekt z tej przeglądarki">Usuń konto</button>' : "") +
       '<button type="button" class="btn small" data-act="logout">Wyloguj</button>' +
       "</div>" +
       "</header>" +

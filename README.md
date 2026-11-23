@@ -91,11 +91,15 @@ w przeglądarkach tych osób). Można to zmienić bez własnego serwera:
 4. Wklej ten URL w `js/auth.js` w zmiennej `REPORT_URL` (na początku pliku)
    i opublikuj zmianę.
 
-Od tej pory każda nowa rejestracja dopisze wiersz w zakładce „Rejestracje”:
-data (UTC), login, nazwa wyświetlana, źródło. **Hasło nigdy nie jest wysyłane**
+Od tej pory każda nowa rejestracja oraz **usunięcie konta lokalnego** dopisze
+wiersz w zakładce „Rejestracje”: data (UTC), login, nazwa wyświetlana, źródło,
+akcja („rejestracja” / „usunięcie”). **Hasło nigdy nie jest wysyłane**
 – zostaje wyłącznie w przeglądarce użytkownika. Formularz rejestracji pokazuje
 wtedy wyraźną informację o rejestrze (login, nazwa i data trafiają do arkusza
 właściciela). Puste `REPORT_URL` = rejestr wyłączony, nic nie jest wysyłane.
+Jeśli aktualizujesz skrypt w istniejącym projekcie Apps Script, po zapisaniu
+wybierz *Wdróż → Zarządzaj wdrożeniami → edytuj → Wersja: Nowa wersja → Wdróż*
+– ten sam URL `/exec` zacznie używać nowego kodu.
 
 * **„Zapamiętaj mnie na tym urządzeniu"** (domyślnie zaznaczone) zapisuje sesję
   w `localStorage` pod kluczem `pab.sites.auth.v1`. Bez zaznaczenia sesja trwa
@@ -106,6 +110,10 @@ właściciela). Puste `REPORT_URL` = rejestr wyłączony, nic nie jest wysyłane
   z listy. Nazwa zalogowanej osoby jest widoczna w pasku nagłówka.
 * Przycisk **„Wyloguj"** w prawym górnym rogu paska nagłówka czyści oba zapisy
   i przeładowuje stronę na ekran logowania.
+* Przycisk **„Usuń konto"** (tylko dla kont lokalnych, obok „Wyloguj") trwale
+  usuwa konto **razem z jego projektem** z tej przeglądarki, po potwierdzeniu
+  w oknie aplikacji. Operacji nie można cofnąć. Kont z `accounts.json` nie
+  usuwa się z poziomu strony – robi to właściciel, edytując plik.
 * Dostęp do płatnych plików (`pab.sites.paid.v1`) jest niezależny od logowania.
 
 > **Ważne:** w aplikacji statycznej login i hasło są widoczne w źródle strony
