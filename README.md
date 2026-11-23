@@ -78,6 +78,25 @@ nie jawny tekst. Konta z `accounts.json` są wspólne dla wszystkich urządzeń;
 konta lokalne – nie. Login: 3–32 znaki (litery angielskie, cyfry, `.`, `-`, `_`),
 hasło: min. 4 znaki.
 
+### Opcjonalnie: rejestr nowych kont w Google Sheets
+
+Domyślnie właściciel strony **nie widzi**, kto tworzy konta lokalne (są tylko
+w przeglądarkach tych osób). Można to zmienić bez własnego serwera:
+
+1. Utwórz arkusz w Google Sheets, np. „PAB cyfrowa – rejestracje”.
+2. *Rozszerzenia → Apps Script*, wklej zawartość pliku
+   **`google-sheets/rejestracje.gs`** z tego katalogu, zapisz.
+3. *Wdróż → Nowe wdrożenie → Aplikacja internetowa*: „Wykonaj jako” = Ja,
+   „Kto ma dostęp” = Każdy. Skopiuj URL wdrożenia (kończy się na `/exec`).
+4. Wklej ten URL w `js/auth.js` w zmiennej `REPORT_URL` (na początku pliku)
+   i opublikuj zmianę.
+
+Od tej pory każda nowa rejestracja dopisze wiersz w zakładce „Rejestracje”:
+data (UTC), login, nazwa wyświetlana, źródło. **Hasło nigdy nie jest wysyłane**
+– zostaje wyłącznie w przeglądarce użytkownika. Formularz rejestracji pokazuje
+wtedy wyraźną informację o rejestrze (login, nazwa i data trafiają do arkusza
+właściciela). Puste `REPORT_URL` = rejestr wyłączony, nic nie jest wysyłane.
+
 * **„Zapamiętaj mnie na tym urządzeniu"** (domyślnie zaznaczone) zapisuje sesję
   w `localStorage` pod kluczem `pab.sites.auth.v1`. Bez zaznaczenia sesja trwa
   do zamknięcia karty (`sessionStorage`).
@@ -282,6 +301,8 @@ sites\
   embed.html        pomocnik: kod osadzenia w Google Sites + podgląd
   favicon.svg
   accounts.json     lista kont (login, hasło, nazwa wyświetlana)
+  google-sheets\
+    rejestracje.gs  skrypt Apps Script: rejestr nowych kont w Google Sheets
   engine\
     content.py      kopia src\content.py (teksty dokumentów)
     exporters.py    kopia src\exporters.py (TXT, nazwy plików)

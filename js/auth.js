@@ -15,6 +15,11 @@
    i jest widoczne tylko na tym urządzeniu. Hasło konta lokalnego jest
    przechowywane jako skrót, nie jawny tekst.
 
+   OPCJONALNIE: właściciel może włączyć rejestr nowych kont w swoim arkuszu
+   Google Sheets (REPORT_URL poniżej + google-sheets/rejestracje.gs).
+   Wysyłane są wtedy tylko login, nazwa wyświetlana i data – nigdy hasło.
+   Formularz rejestracji pokazuje o tym wyraźną informację.
+
    UWAGA: w aplikacji statycznej login i hasło kont z accounts.json są widoczne
    w źródle i w pliku accounts.json. Jest to wygodna brama dostępu, a nie
    zabezpieczenie przed osobą techniczną. Osobne projekty są zapisywane pod
@@ -26,6 +31,10 @@
   var KEY = "pab.sites.auth.v1";
   var LOCAL_KEY = "pab.sites.accounts.local.v1";
   var ACCOUNTS_URL = "accounts.json?cb=" + Date.now();
+
+  /* URL wdrożonej aplikacji Google Apps Script (patrz google-sheets/rejestracje.gs).
+     Puste = rejestr wyłączony. Można też nadpisać przez window.PAB_REPORT_URL. */
+  var REPORT_URL = "";
   var accounts = [];          // konta z pliku accounts.json
   var localAccounts = [];     // konta utworzone w tej przeglądarce
 
@@ -175,6 +184,30 @@
     return true;
   }
 
+  function reportUrl() {
+    return window.PAB_REPORT_URL || REPORT_URL;
+  }
+
+  /* Zgłoszenie nowej rejestracji do arkusza właściciela (fire-and-forget).
+     Tylko login, nazwa wyświetlana i data – bez hasła. Nie blokuje rejestracji. */
+  function reportRegistration(user) {
+    var url = reportUrl();
+    if (!url) return;
+    try {
+      fetch(url, {
+        method: "POST",
+        mode: "no-cors",
+        headers: { "Content-Type": "text/plain;charset=UTF-8" },
+        body: JSON.stringify({
+          login: user.login,
+          display: user.display,
+          date: new Date().toISOString(),
+          src: "sites"
+        })
+      }).catch(function () { /* brak sieci nie może blokować rejestracji */ });
+    } catch (err) { /* ignorujemy */ }
+  }
+
   /* Rejestracja konta lokalnego. Zwraca {ok:true} albo {ok:false, error:"…"}. */
   function register(loginValue, passwordValue, displayValue) {
     var loginName = String(loginValue || "").trim();
@@ -205,6 +238,7 @@
       return { ok: false, error: "Nie udało się zapisać konta w pamięci przeglądarki. " +
         "Sprawdź, czy nie jesteś w trybie prywatnym." };
     }
+    reportRegistration(user);
     return { ok: true, user: user };
   }
 
@@ -296,6 +330,11 @@
       "<h2>Utwórz konto</h2>" +
       '<p class="login-sub">Nowe konto dostanie własny, osobny projekt. ' +
       "Zapisze się tylko w tej przeglądarce na tym urządzeniu.</p>" +
+      (reportUrl()
+        ? '<p class="login-hint">Właściciel strony prowadzi rejestr nowych kont: ' +
+          "przy rejestracji wysyłamy login, nazwę wyświetlaną i datę do jego arkusza " +
+          "Google (bez hasła).</p>"
+        : "") +
       '<div class="login-error" id="register-error" role="alert" hidden></div>' +
       '<label class="field"><span class="field-label">Login</span>' +
       '<input type="text" name="login" id="register-name" autocomplete="username" ' +
@@ -398,6 +437,7 @@
     logout: logout,
     showLogin: showLogin,
     showRegister: showRegister,
+    reportEnabled: function () { return !!reportUrl(); },
     gate: gate,
     registerGate: registerGate
   };
