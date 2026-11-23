@@ -599,6 +599,28 @@ select.inline { width: auto; min-width: 260px; }
 }
 @keyframes spin { to { transform: rotate(360deg); } }
 
+/* --- okno potwierdzenia (zamiast natywnego confirm) ---------------------- */
+#ask {
+  position: fixed;
+  inset: 0;
+  display: none;
+  place-items: center;
+  background: rgba(12, 59, 44, 0.42);
+  backdrop-filter: blur(2px);
+  z-index: 96;
+}
+#ask.show { display: grid; }
+.ask-card {
+  background: #fff;
+  border-radius: 14px;
+  padding: 22px 26px;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.3);
+  max-width: 430px;
+  margin: 16px;
+}
+.ask-msg { margin: 0 0 18px; font-size: 0.95rem; }
+.ask-actions { display: flex; gap: 10px; justify-content: flex-end; }
+
 .boot { display: grid; place-items: center; gap: 12px; padding: 90px 20px; color: var(--muted); }
 .boot .logo { width: 58px; height: 58px; font-size: 1.15rem; }
 
@@ -624,7 +646,7 @@ select.inline { width: auto; min-width: 260px; }
 }
 
 @media print {
-  .topbar, .steps, .footer, .head-actions, .toast, #busy { display: none !important; }
+  .topbar, .steps, .footer, .head-actions, .toast, #busy, #ask { display: none !important; }
   body { background: #fff; }
   main { padding: 0; max-width: none; }
   .paper { border: 0; box-shadow: none; padding: 0; max-width: none; }

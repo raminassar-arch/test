@@ -108,6 +108,47 @@
     if (box && busy === 0) box.classList.remove("show");
   }
 
+  /** Potwierdzenie wewnątrz aplikacji. Natywne confirm() bywa blokowane
+      w osadzonych ramkach (np. Google Sites) i wtedy nic się nie dzieje. */
+  function askConfirm(message, confirmLabel) {
+    return new Promise(function (resolve) {
+      let box = $("#ask");
+      if (!box) {
+        box = document.createElement("div");
+        box.id = "ask";
+        box.innerHTML =
+          '<div class="ask-card" role="dialog" aria-modal="true">' +
+          '<p class="ask-msg"></p>' +
+          '<div class="ask-actions">' +
+          '<button type="button" class="btn" data-ask="no">Anuluj</button>' +
+          '<button type="button" class="btn primary" data-ask="yes"></button>' +
+          "</div></div>";
+        document.body.appendChild(box);
+      }
+      if (box.classList.contains("show")) { resolve(false); return; }
+      $(".ask-msg", box).textContent = message;
+      $('[data-ask="yes"]', box).textContent = confirmLabel || "Potwierdź";
+      box.classList.add("show");
+      function done(ok) {
+        box.classList.remove("show");
+        box.removeEventListener("click", onAskClick);
+        document.removeEventListener("keydown", onAskKey);
+        resolve(ok);
+      }
+      function onAskClick(ev) {
+        if (ev.target === box) { done(false); return; }
+        const btn = ev.target.closest("[data-ask]");
+        if (btn) done(btn.getAttribute("data-ask") === "yes");
+      }
+      function onAskKey(ev) {
+        if (ev.key === "Escape") done(false);
+      }
+      box.addEventListener("click", onAskClick);
+      document.addEventListener("keydown", onAskKey);
+      $('[data-ask="no"]', box).focus();
+    });
+  }
+
   // --- projekt -------------------------------------------------------------
 
   function emptyProject() {
@@ -1191,15 +1232,19 @@
     const act = target.getAttribute("data-act");
 
     if (act === "logout") {
-      if (!confirm("Wylogować się z PAB cyfrowej na tym urządzeniu?")) return;
-      window.PABAuth.logout();
-      window.location.reload();
+      askConfirm("Wylogować się z PAB cyfrowej na tym urządzeniu?", "Wyloguj").then(function (ok) {
+        if (!ok) return;
+        window.PABAuth.logout();
+        window.location.reload();
+      });
       return;
     }
     if (act === "new") {
-      if (!confirm("Utworzyć nowy, pusty projekt? Bieżące dane zostaną zastąpione.")) return;
-      setProject(emptyProject(), "Utworzono nowy projekt.");
-      go("dane/ogolne");
+      askConfirm("Utworzyć nowy, pusty projekt? Bieżące dane zostaną zastąpione.", "Nowy projekt").then(function (ok) {
+        if (!ok) return;
+        setProject(emptyProject(), "Utworzono nowy projekt.");
+        go("dane/ogolne");
+      });
       return;
     }
     if (act === "demo") {
@@ -1217,10 +1262,12 @@
       return;
     }
     if (act === "reset") {
-      if (!confirm("Usunąć wszystkie dane projektu z tej przeglądarki?")) return;
-      localStorage.removeItem(projectKey());
-      setProject(emptyProject(), "Projekt wyczyszczony.");
-      go("start");
+      askConfirm("Usunąć wszystkie dane projektu z tej przeglądarki?", "Wyczyść").then(function (ok) {
+        if (!ok) return;
+        localStorage.removeItem(projectKey());
+        setProject(emptyProject(), "Projekt wyczyszczony.");
+        go("start");
+      });
       return;
     }
     if (act === "save-json") {
