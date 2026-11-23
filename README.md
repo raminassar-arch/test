@@ -64,6 +64,17 @@ odświeżyć stronę (`accounts.json` jest pobierany przy każdym uruchomieniu).
 Zmiana hasła unieważnia zapisaną sesję tego konta, bo zapisywana jest tylko
 suma kontrolna loginu i hasła.
 
+### Tworzenie konta („Utwórz konto")
+
+Na ekranie logowania jest odnośnik **„Nie masz konta? Utwórz konto"**. Formularz
+przyjmuje login, nazwę wyświetlaną i hasło (dwukrotnie), po czym od razu loguje
+i tworzy osobny projekt. Ponieważ hosting statyczny nie pozwala zapisywać plików,
+takie konto jest przechowywane **wyłącznie w pamięci tej przeglądarki**
+(`localStorage`, klucz `pab.sites.accounts.local.v1`) i działa tylko na tym
+urządzeniu. Hasło konta lokalnego jest zapisywane jako skrót, nie jawny tekst.
+Konta z `accounts.json` są wspólne dla wszystkich urządzeń; konta lokalne – nie.
+Login: 3–32 znaki (litery angielskie, cyfry, `.`, `-`, `_`), hasło: min. 4 znaki.
+
 * **„Zapamiętaj mnie na tym urządzeniu"** (domyślnie zaznaczone) zapisuje sesję
   w `localStorage` pod kluczem `pab.sites.auth.v1`. Bez zaznaczenia sesja trwa
   do zamknięcia karty (`sessionStorage`).
