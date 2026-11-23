@@ -78,31 +78,6 @@ nie jawny tekst. Konta z `accounts.json` są wspólne dla wszystkich urządzeń;
 konta lokalne – nie. Login: 3–32 znaki (litery angielskie, cyfry, `.`, `-`, `_`),
 hasło: min. 4 znaki.
 
-### Rejestr nowych kont i usunięć (bez Google, bez konfiguracji)
-
-Konta lokalne istnieją tylko w przeglądarkach tych osób, ale właściciel strony
-może widzieć, kto zakłada i usuwa konta. Służy do tego **darmowy, publiczny
-magazyn JSON** (`https://api.restful-api.dev/objects`) – bez zakładania kont,
-logowania, wdrożeń i usług Google. Działa od razu po publikacji strony.
-
-Każda rejestracja oraz **usunięcie konta lokalnego** wysyła osobny wpis:
-data (UTC), login, nazwa wyświetlana, źródło, akcja („rejestracja” / „usunięcie”).
-**Hasło nigdy nie jest wysyłane** – zostaje wyłącznie w przeglądarce użytkownika.
-Formularz rejestracji pokazuje wyraźną informację o rejestrze. Wysyłka używa
-`fetch` z `keepalive`, więc przeżywa przeładowanie strony po usunięciu konta.
-
-Właściciel odczytuje rejestr na dwa sposoby:
-
-* prosi asystenta: „pokaż rejestracje PAB” – asystent pobiera i wyświetla wpisy;
-* samodzielnie: `GET https://api.restful-api.dev/objects/ff808181a09d98f701a208ef3a5d28bd`
-  – wpisy są w `data.events` (zachowywane jest ostatnie 500 zdarzeń).
-
-Adres magazynu zmienia się w `js/auth.js` (`REGISTRY_URL` na początku pliku);
-pusty adres = rejestr wyłączony. Uwaga: to magazyn publiczny – wpisy (loginy
-i nazwy, bez haseł) są odczytywalne przez każdego, kto zna adres API; nie nadaje
-się do danych wrażliwych. Przy niemal równoczesnych rejestracjach może dojść do
-zagubienia jednego wpisu (magazyn nie ma operacji „dodaj do listy”).
-
 * **„Zapamiętaj mnie na tym urządzeniu"** (domyślnie zaznaczone) zapisuje sesję
   w `localStorage` pod kluczem `pab.sites.auth.v1`. Bez zaznaczenia sesja trwa
   do zamknięcia karty (`sessionStorage`).

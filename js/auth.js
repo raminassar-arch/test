@@ -15,12 +15,8 @@
    i jest widoczne tylko na tym urządzeniu. Hasło konta lokalnego jest
    przechowywane jako skrót, nie jawny tekst.
 
-   Rejestr zdarzeń kont (rejestracja/usunięcie) trafia do darmowego,
-   publicznego magazynu JSON (REGISTRY_URL poniżej) – bez zakładania kont,
-   logowania i usług Google. Wysyłane są tylko login, nazwa wyświetlana,
-   data i akcja – nigdy hasło. Formularz rejestracji pokazuje o tym wyraźną
-   informację. Właściciel odczytuje rejestr przez API (GET) albo prosząc
-   asystenta o wyświetlenie wpisów.
+   Rejestr zdarzeń kont nie jest prowadzony – konta lokalne istnieją wyłącznie
+   w przeglądarce użytkownika.
 
    Konto lokalne można usunąć przyciskiem „Usuń konto” w pasku nagłówka –
    znika wtedy konto i jego projekt z tej przeglądarki (bezpowrotnie).
@@ -38,13 +34,6 @@
   var LOCAL_KEY = "pab.sites.accounts.local.v1";
   var ACCOUNTS_URL = "accounts.json?cb=" + Date.now();
 
-  /* Jeden obiekt-indeks w darmowym magazynie JSON (restful-api.dev) zawiera
-     tablicę wszystkich zdarzeń w data.events – lista obiektów API jest
-     zawodna, odczyt po ID działa pewnie. Bez konta, logowania i Google.
-     Puste = rejestr wyłączony. Nadpisanie: window.PAB_REGISTRY_URL. */
-  var REGISTRY_URL = "https://api.restful-api.dev/objects/ff808181a09d98f701a208ef3a5d28bd";
-  var REGISTRY_NAME = "pabcyfrowa-reg-index-v1";
-  var REGISTRY_LIMIT = 500;
   var accounts = [];          // konta z pliku accounts.json
   var localAccounts = [];     // konta utworzone w tej przeglądarce
 
@@ -194,55 +183,6 @@
     return true;
   }
 
-  function registryUrl() {
-    return window.PAB_REGISTRY_URL || REGISTRY_URL;
-  }
-
-  /* Zgłoszenie zdarzenia konta (rejestracja/usunięcie) do rejestru właściciela.
-     Tylko login, nazwa wyświetlana, data i akcja – bez hasła. Odczytujemy
-     obiekt-indeks po ID, dodajemy zdarzenie i zapisujemy go z keepalive,
-     żeby przeładowanie strony nie ucięło wysyłki. Zwraca promise. */
-  var pendingReport = null;
-  function reportEvent(user, action) {
-    var url = registryUrl();
-    if (!url) return null;
-    var event = {
-      login: user.login,
-      display: user.display,
-      date: new Date().toISOString(),
-      src: "sites",
-      action: action
-    };
-    pendingReport = fetch(url).then(function (response) {
-      return response.json();
-    }).then(function (current) {
-      var events = (current && current.data && Array.isArray(current.data.events))
-        ? current.data.events : [];
-      events.push(event);
-      return fetch(url, {
-        method: "PUT",
-        keepalive: true,
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: REGISTRY_NAME,
-          data: { events: events.slice(-REGISTRY_LIMIT) }
-        })
-      });
-    }).catch(function () { /* brak sieci nie może blokować operacji na koncie */ });
-    return pendingReport;
-  }
-
-  /* Czeka na domknięcie wysyłki (najwyżej timeoutMs), żeby przekierowanie
-     lub przeładowanie strony nie ucięło zgłoszenia. Nie zgłasza błędów sieci. */
-  function flushReports(timeoutMs) {
-    var pending = pendingReport;
-    pendingReport = null;
-    var limit = new Promise(function (resolve) {
-      window.setTimeout(resolve, timeoutMs || 1500);
-    });
-    return Promise.race([pending || Promise.resolve(), limit]);
-  }
-
   /* Rejestracja konta lokalnego. Zwraca {ok:true} albo {ok:false, error:"…"}. */
   function register(loginValue, passwordValue, displayValue) {
     var loginName = String(loginValue || "").trim();
@@ -273,7 +213,6 @@
       return { ok: false, error: "Nie udało się zapisać konta w pamięci przeglądarki. " +
         "Sprawdź, czy nie jesteś w trybie prywatnym." };
     }
-    reportEvent(user, "rejestracja");
     return { ok: true, user: user };
   }
 
@@ -317,7 +256,6 @@
       localAccounts.splice(idx, 0, user);
       return { ok: false, error: "Nie udało się zapisać zmiany w pamięci przeglądarki." };
     }
-    reportEvent(user, "usunięcie");
     logout();
     return { ok: true };
   }
@@ -401,11 +339,6 @@
       "<h2>Utwórz konto</h2>" +
       '<p class="login-sub">Nowe konto dostanie własny, osobny projekt. ' +
       "Zapisze się tylko w tej przeglądarce na tym urządzeniu.</p>" +
-      (registryUrl()
-        ? '<p class="login-hint">Właściciel strony prowadzi rejestr nowych kont: ' +
-          "przy rejestracji wysyłamy login, nazwę wyświetlaną i datę do jego rejestru " +
-          "(bez hasła).</p>"
-        : "") +
       '<div class="login-error" id="register-error" role="alert" hidden></div>' +
       '<label class="field"><span class="field-label">Login</span>' +
       '<input type="text" name="login" id="register-name" autocomplete="username" ' +
@@ -453,9 +386,7 @@
       }
       registerError.hidden = true;
       login(name, password, remember);
-      flushReports(1500).then(function () {
-        if (typeof onSuccess === "function") onSuccess();
-      });
+      if (typeof onSuccess === "function") onSuccess();
     });
   }
 
@@ -512,8 +443,6 @@
     logout: logout,
     showLogin: showLogin,
     showRegister: showRegister,
-    reportEnabled: function () { return !!registryUrl(); },
-    flushReports: flushReports,
     gate: gate,
     registerGate: registerGate
   };
