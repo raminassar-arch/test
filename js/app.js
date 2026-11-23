@@ -1170,6 +1170,12 @@
     if (!target) return;
     const act = target.getAttribute("data-act");
 
+    if (act === "logout") {
+      if (!confirm("Wylogować się z PAB cyfrowej na tym urządzeniu?")) return;
+      window.PABAuth.logout();
+      window.location.reload();
+      return;
+    }
     if (act === "new") {
       if (!confirm("Utworzyć nowy, pusty projekt? Bieżące dane zostaną zastąpione.")) return;
       setProject(emptyProject(), "Utworzono nowy projekt.");
@@ -1535,6 +1541,7 @@
       '<div class="topbar-tools">' +
       '<span class="chip" id="engine-chip">silnik: nieuruchomiony</span>' +
       '<span class="chip save" id="save-state">zapis lokalny</span>' +
+      '<button type="button" class="btn small" data-act="logout">Wyloguj</button>' +
       "</div>" +
       "</header>" +
       '<nav class="steps" id="steps"></nav>' +
@@ -1562,9 +1569,17 @@
     render();
   }
 
+  function boot() {
+    if (window.PABAuth) {
+      window.PABAuth.gate(document.getElementById("app"), mount);
+    } else {
+      mount();
+    }
+  }
+
   if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", mount);
+    document.addEventListener("DOMContentLoaded", boot);
   } else {
-    mount();
+    boot();
   }
 })();
