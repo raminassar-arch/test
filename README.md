@@ -64,16 +64,19 @@ odświeżyć stronę (`accounts.json` jest pobierany przy każdym uruchomieniu).
 Zmiana hasła unieważnia zapisaną sesję tego konta, bo zapisywana jest tylko
 suma kontrolna loginu i hasła.
 
-### Tworzenie konta („Utwórz konto")
+### Tworzenie konta („Utwórz konto") – osobna strona
 
-Na ekranie logowania jest odnośnik **„Nie masz konta? Utwórz konto"**. Formularz
-przyjmuje login, nazwę wyświetlaną i hasło (dwukrotnie), po czym od razu loguje
-i tworzy osobny projekt. Ponieważ hosting statyczny nie pozwala zapisywać plików,
-takie konto jest przechowywane **wyłącznie w pamięci tej przeglądarki**
-(`localStorage`, klucz `pab.sites.accounts.local.v1`) i działa tylko na tym
-urządzeniu. Hasło konta lokalnego jest zapisywane jako skrót, nie jawny tekst.
-Konta z `accounts.json` są wspólne dla wszystkich urządzeń; konta lokalne – nie.
-Login: 3–32 znaki (litery angielskie, cyfry, `.`, `-`, `_`), hasło: min. 4 znaki.
+Na ekranie logowania jest odnośnik **„Nie masz konta? Utwórz konto"**, który
+przechodzi na **osobną stronę `rejestracja.html`**. Formularz przyjmuje login,
+nazwę wyświetlaną i hasło (dwukrotnie), po czym od razu loguje i przenosi
+do aplikacji (`index.html`) z osobnym projektem. Odnośnik „Masz już konto?
+Zaloguj się" wraca na stronę logowania. Ponieważ hosting statyczny nie pozwala
+zapisywać plików, takie konto jest przechowywane **wyłącznie w pamięci tej
+przeglądarki** (`localStorage`, klucz `pab.sites.accounts.local.v1`) i działa
+tylko na tym urządzeniu. Hasło konta lokalnego jest zapisywane jako skrót,
+nie jawny tekst. Konta z `accounts.json` są wspólne dla wszystkich urządzeń;
+konta lokalne – nie. Login: 3–32 znaki (litery angielskie, cyfry, `.`, `-`, `_`),
+hasło: min. 4 znaki.
 
 * **„Zapamiętaj mnie na tym urządzeniu"** (domyślnie zaznaczone) zapisuje sesję
   w `localStorage` pod kluczem `pab.sites.auth.v1`. Bez zaznaczenia sesja trwa
@@ -273,7 +276,8 @@ plików: `PZT_2026.11.18.docx` itd. – identyczne z wersją desktopową.
 
 ```
 sites\
-  index.html        aplikacja (punkt wejścia)
+  index.html        aplikacja (punkt wejścia, ekran logowania)
+  rejestracja.html  osobna strona tworzenia konta („Utwórz konto”)
   app.css           motyw zielono-złoty, układ, podgląd A4
   embed.html        pomocnik: kod osadzenia w Google Sites + podgląd
   favicon.svg
@@ -289,7 +293,8 @@ sites\
     render.js       podgląd HTML i dokument do druku
     payment.js      płatności za dokumenty (linki + dostęp w localStorage)
     boot.js         Pyodide + mostek do content.py/exporters.py
-    auth.js         ekran logowania i zapis sesji w przeglądarce
+    auth.js         logowanie, rejestracja kont i zapis sesji w przeglądarce
+    register.js     uruchomienie osobnej strony rejestracja.html
     app.js          interfejs: routing, formularze, eksport, płatności
   build_site.py     regeneracja fields.js i kopii silnika
   parity_check.py   porównanie DOCX z wersją desktopową

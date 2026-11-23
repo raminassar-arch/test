@@ -9,7 +9,8 @@
        {"login": "anna", "password": "MOJE_HASLO", "display": "Anna Kowalska"}
      ]}
 
-   Dodatkowo każdy może utworzyć własne konto przyciskiem „Utwórz konto”.
+   Dodatkowo każdy może utworzyć własne konto na osobnej stronie
+   rejestracja.html (odnośnik „Utwórz konto” na ekranie logowania).
    Takie konto zapisuje się WYŁĄCZNIE w pamięci tej przeglądarki (localStorage)
    i jest widoczne tylko na tym urządzeniu. Hasło konta lokalnego jest
    przechowywane jako skrót, nie jawny tekst.
@@ -226,7 +227,7 @@
     };
   }
 
-  /** Wyświetla ekran logowania / rejestracji w kontenerze #app. */
+  /** Wyświetla ekran logowania w kontenerze #app. Rejestracja: rejestracja.html. */
   function showLogin(root, onSuccess) {
     if (!root) return;
     var info = appInfo();
@@ -253,60 +254,14 @@
       "checked> Zapamiętaj mnie na tym urządzeniu</label>" +
       '<button type="submit" class="btn primary login-submit">Zaloguj się</button>' +
       '<p class="login-switch">Nie masz konta? ' +
-      '<a href="#" id="to-register">Utwórz konto</a></p>' +
-      '<p class="login-foot">' + esc(info.credit) + " · " + esc(info.company) + "</p>" +
-      "</form>" +
-
-      '<form class="login-card" id="register-form" autocomplete="on" hidden>' +
-      "<h2>Utwórz konto</h2>" +
-      '<p class="login-sub">Nowe konto dostanie własny, osobny projekt. ' +
-      "Zapisze się tylko w tej przeglądarce na tym urządzeniu.</p>" +
-      '<div class="login-error" id="register-error" role="alert" hidden></div>' +
-      '<label class="field"><span class="field-label">Login</span>' +
-      '<input type="text" name="login" id="register-name" autocomplete="username" ' +
-      "required></label>" +
-      '<p class="login-hint">3–32 znaki: litery angielskie, cyfry, kropka, myślnik, ' +
-      "podkreślenie.</p>" +
-      '<label class="field"><span class="field-label">Imię i nazwisko (wyświetlane)</span>' +
-      '<input type="text" name="display" id="register-display" autocomplete="name"></label>' +
-      '<label class="field"><span class="field-label">Hasło</span>' +
-      '<input type="password" name="password" id="register-password" ' +
-      'autocomplete="new-password" required minlength="4"></label>' +
-      '<label class="field"><span class="field-label">Powtórz hasło</span>' +
-      '<input type="password" name="password2" id="register-password2" ' +
-      'autocomplete="new-password" required minlength="4"></label>' +
-      '<label class="login-remember"><input type="checkbox" id="register-remember" ' +
-      "checked> Zapamiętaj mnie na tym urządzeniu</label>" +
-      '<button type="submit" class="btn primary login-submit">Utwórz konto i zaloguj</button>' +
-      '<p class="login-switch">Masz już konto? <a href="#" id="to-login">Zaloguj się</a></p>' +
+      '<a href="rejestracja.html">Utwórz konto</a></p>' +
       '<p class="login-foot">' + esc(info.credit) + " · " + esc(info.company) + "</p>" +
       "</form>" +
 
       "</div></div>";
 
     var loginForm = document.getElementById("login-form");
-    var registerForm = document.getElementById("register-form");
     var loginError = document.getElementById("login-error");
-    var registerError = document.getElementById("register-error");
-
-    function show(which) {
-      var toRegister = which === "register";
-      loginForm.hidden = toRegister;
-      registerForm.hidden = !toRegister;
-      loginError.hidden = true;
-      registerError.hidden = true;
-      var focus = document.getElementById(toRegister ? "register-name" : "login-name");
-      if (focus) focus.focus();
-    }
-
-    document.getElementById("to-register").addEventListener("click", function (event) {
-      event.preventDefault();
-      show("register");
-    });
-    document.getElementById("to-login").addEventListener("click", function (event) {
-      event.preventDefault();
-      show("login");
-    });
 
     loginForm.addEventListener("submit", function (event) {
       event.preventDefault();
@@ -322,6 +277,50 @@
       loginError.hidden = true;
       if (typeof onSuccess === "function") onSuccess();
     });
+  }
+
+  /** Wyświetla ekran tworzenia konta (osobna strona rejestracja.html). */
+  function showRegister(root, onSuccess) {
+    if (!root) return;
+    var info = appInfo();
+    root.innerHTML =
+      '<div class="login-screen">' +
+      '<div class="login-panel">' +
+      '<div class="login-brand">' +
+      '<span class="login-logo">PAB</span>' +
+      "<h1>" + esc(info.name) + "</h1>" +
+      "<p>" + esc(info.tagline) + "</p>" +
+      "</div>" +
+
+      '<form class="login-card" id="register-form" autocomplete="on">' +
+      "<h2>Utwórz konto</h2>" +
+      '<p class="login-sub">Nowe konto dostanie własny, osobny projekt. ' +
+      "Zapisze się tylko w tej przeglądarce na tym urządzeniu.</p>" +
+      '<div class="login-error" id="register-error" role="alert" hidden></div>' +
+      '<label class="field"><span class="field-label">Login</span>' +
+      '<input type="text" name="login" id="register-name" autocomplete="username" ' +
+      "required autofocus></label>" +
+      '<p class="login-hint">3–32 znaki: litery angielskie, cyfry, kropka, myślnik, ' +
+      "podkreślenie.</p>" +
+      '<label class="field"><span class="field-label">Imię i nazwisko (wyświetlane)</span>' +
+      '<input type="text" name="display" id="register-display" autocomplete="name"></label>' +
+      '<label class="field"><span class="field-label">Hasło</span>' +
+      '<input type="password" name="password" id="register-password" ' +
+      'autocomplete="new-password" required minlength="4"></label>' +
+      '<label class="field"><span class="field-label">Powtórz hasło</span>' +
+      '<input type="password" name="password2" id="register-password2" ' +
+      'autocomplete="new-password" required minlength="4"></label>' +
+      '<label class="login-remember"><input type="checkbox" id="register-remember" ' +
+      "checked> Zapamiętaj mnie na tym urządzeniu</label>" +
+      '<button type="submit" class="btn primary login-submit">Utwórz konto i zaloguj</button>' +
+      '<p class="login-switch">Masz już konto? <a href="index.html">Zaloguj się</a></p>' +
+      '<p class="login-foot">' + esc(info.credit) + " · " + esc(info.company) + "</p>" +
+      "</form>" +
+
+      "</div></div>";
+
+    var registerForm = document.getElementById("register-form");
+    var registerError = document.getElementById("register-error");
 
     registerForm.addEventListener("submit", function (event) {
       event.preventDefault();
@@ -372,6 +371,20 @@
     });
   }
 
+  /** Osobna strona rejestracji: zalogowanych odsyła dalej, reszcie pokazuje formularz. */
+  function registerGate(root, onSuccess) {
+    return ready.then(function () {
+      if (isAuthenticated()) {
+        if (typeof onSuccess === "function") onSuccess();
+      } else {
+        showRegister(root, onSuccess);
+      }
+    }).catch(function () {
+      showError(root, "Nie udało się wczytać listy kont (accounts.json). " +
+        "Sprawdź, czy aplikacja jest otwarta przez serwer HTTP.");
+    });
+  }
+
   window.PABAuth = {
     STORAGE_KEY: KEY,
     LOCAL_KEY: LOCAL_KEY,
@@ -384,6 +397,8 @@
     register: register,
     logout: logout,
     showLogin: showLogin,
-    gate: gate
+    showRegister: showRegister,
+    gate: gate,
+    registerGate: registerGate
   };
 })();
