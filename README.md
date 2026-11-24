@@ -27,6 +27,7 @@ Hosting: GitHub Pages, gałąź `main`, katalog główny (`/`).
 | Silnik treści | `engine\content.py`, `engine\exporters.py` | **ten sam kod co w wersji desktopowej**, uruchamiany przez Pyodide (Python w WebAssembly) |
 | Formularze | `js\fields.js` | wygenerowany z `src\ui_specs.py` – jedno źródło definicji pól |
 | DOCX | `js\docx.js`, `js\zip.js` | zapis OOXML i archiwum ZIP w czystym JavaScripcie |
+| Motywy | `js\theme.js` | pięć wyglądów dokumentów, znak wodny, aliasy dawnych nazw |
 | Podgląd i wydruk | `js\render.js` | podgląd HTML oraz samodzielny dokument A4 do druku / PDF |
 | Płatności | `js\payment.js` | dostęp do PDF/DOCX per dokument; linki do uzupełnienia |
 | Konta | `accounts.json` | edytowalna lista użytkowników |
@@ -290,6 +291,20 @@ TXT oraz zbiorczy ZIP **nie są dostępne** w wersji publicznej (zostały usuni�
 z interfejsu; silnik nadal zawiera `txt()` na potrzeby zgodności kodu). Nazwy
 plików: `PZT_2026.11.18.docx` itd. – identyczne z wersją desktopową.
 
+### Motywy dokumentów
+
+W widoku *Eksport* oraz w *Podglądzie* dostępny jest wybór **Motyw nr 1** …
+**Motyw nr 5**. Ustawienie jest zapisywane w projekcie jako `meta.motyw` (klucze
+`motyw-1` … `motyw-5`) i dotyczy wyłącznie wyglądu plików DOCX/PDF: fontów,
+kolorów nagłówków, tabel, linii i znaku wodnego. Domyślny jest *Motyw nr 1*
+(granat, układ urzędowy); pozostałe to zieleń, głęboka zieleń ze złotem,
+bordo i turkus. Dawne nazwy `klasyczny`, `nowoczesny`, `bardzo-nowoczesny`
+są rozpoznawane jako aliasy, dzięki czemu starsze projekty nie tracą wyglądu.
+Każdy DOCX (nagłówek VML) i każda strona wydruku/PDF zawierają znak wodny
+**„BIM ARCHITECTS & CONSULTANTS WERSJA TESTOWA”**. Zmiana motywu nie zmienia
+treści dokumentów – `sites\parity_hash.py` nadal potwierdza identyczne akapity.
+Statyczna wersja używa cache-bustingu `?v=1.9.12`.
+
 ---
 
 ## Struktura katalogu
@@ -310,6 +325,7 @@ sites\
     fields.js       wygenerowany opis pól formularza
     zip.js          CRC32 i zapis ZIP (metoda „store”)
     docx.js         zapis OOXML (stylizacja jak w exporters.py)
+    theme.js        motywy nr 1–5, znak wodny i aliasy
     render.js       podgląd HTML i dokument do druku
     payment.js      płatności za dokumenty (linki + dostęp w localStorage)
     boot.js         Pyodide + mostek do content.py/exporters.py

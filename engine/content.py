@@ -15,6 +15,83 @@ from dataclasses import dataclass, field
 from typing import Any
 
 # ---------------------------------------------------------------------------
+# Motyw końcowy dokumentów DOCX/PDF
+# ---------------------------------------------------------------------------
+
+MOTYW_DOMYSLNY = "motyw-1"
+MOTYWY = (
+    ("motyw-1", "Motyw nr 1"),
+    ("motyw-2", "Motyw nr 2"),
+    ("motyw-3", "Motyw nr 3"),
+    ("motyw-4", "Motyw nr 4"),
+    ("motyw-5", "Motyw nr 5"),
+)
+MOTYW_OPIS = {
+    "motyw-1": "Times New Roman, granatowe nagłówki i klasyczna linia – dotychczasowy układ urzędowy.",
+    "motyw-2": "Calibri i zielone akcenty – lżejszy, uporządkowany układ biurowy.",
+    "motyw-3": "Segoe UI, głęboka zieleń i złoto – wyrazisty układ prezentacyjny.",
+    "motyw-4": "Georgia i bordo – elegancki układ o ciepłym charakterze.",
+    "motyw-5": "Verdana i turkus – nowoczesny układ o dużej czytelności.",
+}
+MOTYW_ALIASY = {
+    "1": "motyw-1",
+    "nr 1": "motyw-1",
+    "motyw 1": "motyw-1",
+    "motyw nr 1": "motyw-1",
+    "klasyczny": "motyw-1",
+    "classic": "motyw-1",
+    "klasyk": "motyw-1",
+    "traditional": "motyw-1",
+    "2": "motyw-2",
+    "nr 2": "motyw-2",
+    "motyw 2": "motyw-2",
+    "motyw nr 2": "motyw-2",
+    "nowoczesny": "motyw-2",
+    "modern": "motyw-2",
+    "3": "motyw-3",
+    "nr 3": "motyw-3",
+    "motyw 3": "motyw-3",
+    "motyw nr 3": "motyw-3",
+    "bardzo-nowoczesny": "motyw-3",
+    "bardzo nowoczesny": "motyw-3",
+    "ultra": "motyw-3",
+    "ultra-modern": "motyw-3",
+    "4": "motyw-4",
+    "nr 4": "motyw-4",
+    "motyw 4": "motyw-4",
+    "motyw nr 4": "motyw-4",
+    "5": "motyw-5",
+    "nr 5": "motyw-5",
+    "motyw 5": "motyw-5",
+    "motyw nr 5": "motyw-5",
+}
+
+
+def resolve_motyw(value: Any) -> str:
+    """Zwraca klucz motywu, akceptując też nazwy z interfejsu i aliasy."""
+    key = str(value or "").strip().lower().replace("_", "-")
+    key = MOTYW_ALIASY.get(key, key)
+    return key if key in dict(MOTYWY) else MOTYW_DOMYSLNY
+
+
+def motyw_z_danych(data: dict[str, Any] | None,
+                   doc_obj: Any | None = None) -> str:
+    """Odczytuje motyw z danych projektu lub metadanych dokumentu."""
+    if data:
+        raw = data.get("motyw")
+        if raw:
+            return resolve_motyw(raw)
+        meta = data.get("meta")
+        if isinstance(meta, dict) and meta.get("motyw"):
+            return resolve_motyw(meta.get("motyw"))
+    if doc_obj is not None:
+        raw = getattr(doc_obj, "meta", {}).get("motyw")
+        if raw:
+            return resolve_motyw(raw)
+    return MOTYW_DOMYSLNY
+
+
+# ---------------------------------------------------------------------------
 # Słowniki
 # ---------------------------------------------------------------------------
 
@@ -229,7 +306,8 @@ def projektanci_list(ogolne: dict[str, Any] | None) -> list[dict[str, str]]:
 def blank_project() -> dict[str, Any]:
     """Zwraca kompletny, pusty projekt z domyślnymi wartościami."""
     return {
-        "meta": {"wersja": 1, "program": "PAB cyfrowa"},
+        "motyw": MOTYW_DOMYSLNY,
+        "meta": {"wersja": 1, "program": "PAB cyfrowa", "motyw": MOTYW_DOMYSLNY},
         "ogolne": {
             "nazwa": "",
             "inwestor": "",

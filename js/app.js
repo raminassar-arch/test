@@ -261,7 +261,7 @@
 
   function emptyProject() {
     return {
-      meta: { wersja: 1, program: F.app.name },
+      meta: { wersja: 1, program: F.app.name, motyw: "motyw-1" },
       ogolne: {
         nazwa: "",
         inwestor: "",
@@ -333,6 +333,8 @@
 
   function setProject(data, message) {
     project = data;
+    if (!project.meta || typeof project.meta !== "object") project.meta = {};
+    if (!project.meta.motyw) project.meta.motyw = "motyw-1";
     if (!project.ogolne) project.ogolne = {};
     if (!Array.isArray(project.ogolne.projektanci)) project.ogolne.projektanci = [];
     ["dokumenty", "zalaczniki", "obiekty", "bilans"].forEach(function (key) {
@@ -472,6 +474,37 @@
   function setVal(section, key, value) {
     if (!project[section]) project[section] = {};
     project[section][key] = value;
+  }
+
+  // --- motyw dokumentów -----------------------------------------------------
+
+  function themeKey() {
+    const raw = project.meta && project.meta.motyw ? project.meta.motyw : "motyw-1";
+    return window.PABTheme.resolve(raw);
+  }
+
+  function themeOptions() {
+    return window.PABTheme.keys
+      .map(function (key) {
+        const t = window.PABTheme.get(key);
+        return '<option value="' + key + '"' + (key === themeKey() ? " selected" : "") + ">" +
+          esc(t.label) + "</option>";
+      })
+      .join("");
+  }
+
+  function themePickerPanel() {
+    const t = window.PABTheme.get(themeKey());
+    return (
+      '<section class="panel theme-panel">' +
+      "<h2>Motyw dokumentów</h2>" +
+      '<p class="small muted">Wybór dotyczy wyglądu gotowych plików DOCX i PDF: strony tytułowej, nagłówków, tabel i adnotacji. ' +
+      "Ustawienie jest zapisywane w projekcie.</p>" +
+      '<div class="theme-row"><label for="theme-select">Motyw dokumentu</label>' +
+      '<select id="theme-select" class="inline" data-bind="meta.motyw">' + themeOptions() + "</select></div>" +
+      '<p id="theme-opis" class="small muted">' + esc(t.opis) + "</p>" +
+      "</section>"
+    );
   }
 
   function isRequired(section, key) {
@@ -972,6 +1005,8 @@
       '<div class="page-head"><div><h1>Podgląd dokumentu</h1>' +
       "<p>Treść generowana przez ten sam silnik co w wersji desktopowej.</p></div>" +
       '<div class="head-actions">' +
+      '<label class="theme-inline"><span>Motyw:</span>' +
+      '<select id="theme-select" class="inline" data-bind="meta.motyw">' + themeOptions() + "</select></label>" +
       '<select id="preview-kind" class="inline">' +
       (F.dokumenty || [])
         .map(function (pair) {
@@ -1008,6 +1043,7 @@
     return (
       '<div class="page-head"><div><h1>Eksport dokumentacji</h1>' +
       "<p>Płatność jest przypisana do pojedynczego dokumentu. Po opłaceniu pliki pobierzesz od razu w tej przeglądarce.</p></div></div>" +
+      themePickerPanel() +
       '<section class="panel pay-intro">' +
       '<h2>Cennik – każdy dokument osobno</h2>' +
       '<div class="price-grid">' +
@@ -1296,7 +1332,10 @@
     stage.innerHTML = '<div class="panel"><p>Generuję podgląd…</p></div>';
     window.PABEngine.build(previewKind, project)
       .then(function (doc) {
-        stage.innerHTML = '<div class="paper">' + window.PABRender.document(doc) + "</div>";
+        const key = themeKey();
+        window.PABTheme.use(doc, key);
+        stage.innerHTML = '<div class="paper" style="' + window.PABTheme.style(key) + '">' +
+          window.PABRender.document(doc) + "</div>";
       })
       .catch(function (err) {
         stage.innerHTML = '<div class="panel"><h2>Nie udało się zbudować dokumentu</h2><p>' + esc(err.message || err) + "</p></div>";
@@ -1320,7 +1359,7 @@
   }
 
   function docxBytes(doc) {
-    return window.PABDocx.build(doc);
+    return window.PABDocx.build(doc, themeKey());
   }
 
   function exportDocx(kind) {
@@ -1341,7 +1380,7 @@
         return window.PABEngine.build(kind, project);
       })
       .then(function (doc) {
-        const html = window.PABRender.printable(doc);
+        const html = window.PABRender.printable(doc, null, themeKey());
         const frame = document.createElement("iframe");
         frame.setAttribute("aria-hidden", "true");
         frame.style.position = "fixed";
@@ -1750,6 +1789,14 @@
   function onChange(event) {
     const target = event.target;
     if (target.id === "project-select") return openProject(target.value);
+    if (target.id === "theme-select") {
+      bindField(target);
+      saveProject(true);
+      const opis = $("#theme-opis");
+      if (opis) opis.textContent = window.PABTheme.get(themeKey()).opis;
+      if ($("#preview-stage")) renderPreview();
+      return;
+    }
     if (target.matches("[data-bind]")) return bindField(target);
     if (target.matches("[data-list]")) return bindList(target);
     if (target.matches("[data-row]")) return bindRow(target);

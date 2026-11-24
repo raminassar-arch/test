@@ -19,6 +19,8 @@ from __future__ import annotations
 
 import os
 import re
+from contextlib import contextmanager
+from contextvars import ContextVar
 from typing import Any
 
 try:  # reportlab jest potrzebny tylko do PDF – DOCX/TXT działają bez niego
@@ -28,28 +30,257 @@ except Exception:  # pragma: no cover
         def __init__(self):
             pass
 
+try:  # import względny przy uruchomieniu jako pakiet
+    from . import content as C
+except ImportError:  # uruchomienie z katalogu src
+    import content as C  # type: ignore[no-redef]
+
 # ---------------------------------------------------------------------------
 # Wspólne
 # ---------------------------------------------------------------------------
 
-DOCX_BODY_FONT = "Times New Roman"
-DOCX_HEAD_FONT = "Arial"
-PDF_SANS = "ArialPL"
-PDF_SANS_BOLD = "ArialPL-Bold"
 PROGRAM_NAME = "PAB cyfrowa"
 
-FONT_CANDIDATES = {
-    "regular": [
-        ("C:/Windows/Fonts/arial.ttf", 0),
-        ("C:/Windows/Fonts/calibri.ttf", 0),
-        ("C:/Windows/Fonts/segoeui.ttf", 0),
-    ],
-    "bold": [
-        ("C:/Windows/Fonts/arialbd.ttf", 0),
-        ("C:/Windows/Fonts/calibrib.ttf", 0),
-        ("C:/Windows/Fonts/segoeuib.ttf", 0),
-    ],
+WATERMARK_TEXT = "BIM ARCHITECTS & CONSULTANTS WERSJA TESTOWA"
+
+# Motyw nr 1 odtwarza dotychczasowy wygląd dokumentów – wartości poniżej są
+# celowo identyczne ze stałymi używanymi przed dodaniem motywów. Każdy kolejny
+# motyw ma własną paletę i znak wodny w kolorze akcentu.
+THEME_STYLES: dict[str, dict[str, Any]] = {
+    "motyw-1": {
+        "label": "Motyw nr 1",
+        "body_font": "Times New Roman",
+        "head_font": "Arial",
+        "body_size": 11,
+        "h1_size": 14,
+        "h2_size": 11.5,
+        "pdf_body_size": 10,
+        "pdf_h1_size": 13,
+        "pdf_h2_size": 10.8,
+        "h1_color": "1F3864",
+        "h2_color": "2F5496",
+        "h1_rule_color": "D9D9D9",
+        "h1_rule_size": 4,
+        "hr_color": "1F3864",
+        "hr_thickness": 1.1,
+        "cover_rule_size": 8,
+        "meta_color": "404040",
+        "muted_color": "595959",
+        "faint_color": "7F7F7F",
+        "note_color": "333333",
+        "cell_color": "000000",
+        "rule_color": "BFBFBF",
+        "grid_color": "8C8C8C",
+        "note_border_color": "C9C9C9",
+        "cover_label_fill": "F2F5FA",
+        "head_fill": "E7ECF5",
+        "note_fill": "F7F7F7",
+        "watermark_color": "1F3864",
+        "pdf_font": "ArialPL",
+        "pdf_bold": "ArialPL-Bold",
+        "pdf_files": {
+            "regular": [("C:/Windows/Fonts/arial.ttf", 0)],
+            "bold": [("C:/Windows/Fonts/arialbd.ttf", 0)],
+        },
+    },
+    "motyw-2": {
+        "label": "Motyw nr 2",
+        "body_font": "Calibri",
+        "head_font": "Calibri",
+        "body_size": 10.5,
+        "h1_size": 13,
+        "h2_size": 11,
+        "pdf_body_size": 10,
+        "pdf_h1_size": 12.8,
+        "pdf_h2_size": 10.6,
+        "h1_color": "14563F",
+        "h2_color": "1E6B50",
+        "h1_rule_color": "C4D2C8",
+        "h1_rule_size": 6,
+        "hr_color": "14563F",
+        "hr_thickness": 0.75,
+        "cover_rule_size": 6,
+        "meta_color": "3B4B42",
+        "muted_color": "65766B",
+        "faint_color": "65766B",
+        "note_color": "33463C",
+        "cell_color": "16241C",
+        "rule_color": "D6E0D5",
+        "grid_color": "C4D2C8",
+        "note_border_color": "D6E0D5",
+        "cover_label_fill": "F2F7F1",
+        "head_fill": "E6EFE6",
+        "note_fill": "F7FAF6",
+        "watermark_color": "14563F",
+        "pdf_font": "CalibriPL",
+        "pdf_bold": "CalibriPL-Bold",
+        "pdf_files": {
+            "regular": [
+                ("C:/Windows/Fonts/calibri.ttf", 0),
+                ("C:/Windows/Fonts/arial.ttf", 0),
+            ],
+            "bold": [
+                ("C:/Windows/Fonts/calibrib.ttf", 0),
+                ("C:/Windows/Fonts/arialbd.ttf", 0),
+            ],
+        },
+    },
+    "motyw-3": {
+        "label": "Motyw nr 3",
+        "body_font": "Segoe UI",
+        "head_font": "Segoe UI",
+        "body_size": 10.5,
+        "h1_size": 15,
+        "h2_size": 12,
+        "pdf_body_size": 10,
+        "pdf_h1_size": 14,
+        "pdf_h2_size": 11,
+        "h1_color": "0C3B2C",
+        "h2_color": "0C6E52",
+        "h1_rule_color": "C8A24A",
+        "h1_rule_size": 12,
+        "hr_color": "0C3B2C",
+        "hr_thickness": 2.0,
+        "cover_rule_size": 14,
+        "meta_color": "3B4B42",
+        "muted_color": "65766B",
+        "faint_color": "8A6B20",
+        "note_color": "2A4B3D",
+        "cell_color": "16241C",
+        "rule_color": "C8A24A",
+        "grid_color": "C8A24A",
+        "note_border_color": "C8A24A",
+        "cover_label_fill": "FBF4DF",
+        "head_fill": "E6EFE6",
+        "note_fill": "FBF4DF",
+        "watermark_color": "C8A24A",
+        "pdf_font": "SegoePL",
+        "pdf_bold": "SegoePL-Bold",
+        "pdf_files": {
+            "regular": [
+                ("C:/Windows/Fonts/segoeui.ttf", 0),
+                ("C:/Windows/Fonts/calibri.ttf", 0),
+            ],
+            "bold": [
+                ("C:/Windows/Fonts/segoeuib.ttf", 0),
+                ("C:/Windows/Fonts/calibrib.ttf", 0),
+            ],
+        },
+    },
+    "motyw-4": {
+        "label": "Motyw nr 4",
+        "body_font": "Georgia",
+        "head_font": "Georgia",
+        "body_size": 11,
+        "h1_size": 14,
+        "h2_size": 11.5,
+        "pdf_body_size": 10.2,
+        "pdf_h1_size": 13.5,
+        "pdf_h2_size": 11,
+        "h1_color": "7A2348",
+        "h2_color": "A3476B",
+        "h1_rule_color": "E0B7C8",
+        "h1_rule_size": 8,
+        "hr_color": "7A2348",
+        "hr_thickness": 1.5,
+        "cover_rule_size": 10,
+        "meta_color": "4A3440",
+        "muted_color": "6E5863",
+        "faint_color": "A3476B",
+        "note_color": "5A3446",
+        "cell_color": "2E1822",
+        "rule_color": "E0B7C8",
+        "grid_color": "D6A8BC",
+        "note_border_color": "D6A8BC",
+        "cover_label_fill": "FBEDF3",
+        "head_fill": "F6DDE8",
+        "note_fill": "FDF5F8",
+        "watermark_color": "7A2348",
+        "pdf_font": "GeorgiaPL",
+        "pdf_bold": "GeorgiaPL-Bold",
+        "pdf_files": {
+            "regular": [
+                ("C:/Windows/Fonts/georgia.ttf", 0),
+                ("C:/Windows/Fonts/times.ttf", 0),
+            ],
+            "bold": [
+                ("C:/Windows/Fonts/georgiab.ttf", 0),
+                ("C:/Windows/Fonts/timesbd.ttf", 0),
+            ],
+        },
+    },
+    "motyw-5": {
+        "label": "Motyw nr 5",
+        "body_font": "Verdana",
+        "head_font": "Verdana",
+        "body_size": 10,
+        "h1_size": 14,
+        "h2_size": 11.5,
+        "pdf_body_size": 9.7,
+        "pdf_h1_size": 13.5,
+        "pdf_h2_size": 11,
+        "h1_color": "2B2D71",
+        "h2_color": "00838F",
+        "h1_rule_color": "7FD1D8",
+        "h1_rule_size": 10,
+        "hr_color": "00838F",
+        "hr_thickness": 1.75,
+        "cover_rule_size": 12,
+        "meta_color": "35435A",
+        "muted_color": "5C6D84",
+        "faint_color": "00838F",
+        "note_color": "234E5A",
+        "cell_color": "172B3A",
+        "rule_color": "B8D9DE",
+        "grid_color": "7FD1D8",
+        "note_border_color": "7FD1D8",
+        "cover_label_fill": "EAF7F8",
+        "head_fill": "D7EEF0",
+        "note_fill": "F3FAFB",
+        "watermark_color": "00838F",
+        "pdf_font": "VerdanaPL",
+        "pdf_bold": "VerdanaPL-Bold",
+        "pdf_files": {
+            "regular": [
+                ("C:/Windows/Fonts/verdana.ttf", 0),
+                ("C:/Windows/Fonts/calibri.ttf", 0),
+            ],
+            "bold": [
+                ("C:/Windows/Fonts/verdanab.ttf", 0),
+                ("C:/Windows/Fonts/calibrib.ttf", 0),
+            ],
+        },
+    },
 }
+
+_THEME_KEY: ContextVar[str] = ContextVar("pab_theme_key", default=C.MOTYW_DOMYSLNY)
+_FONTS_READY: dict[str, bool] = {}
+_FONTS_OK: dict[str, bool] = {}
+
+
+def theme_key() -> str:
+    """Klucz aktualnego motywu eksportu (bezpieczny dla wątków)."""
+    return _THEME_KEY.get()
+
+
+def T(name: str) -> Any:
+    """Wartość tokenu stylu aktualnego motywu."""
+    return THEME_STYLES[theme_key()][name]
+
+
+def resolve_theme(data: dict | None = None, doc_obj=None) -> str:
+    """Wybiera motyw na podstawie danych projektu / metadanych dokumentu."""
+    return C.motyw_z_danych(data, doc_obj)
+
+
+@contextmanager
+def theme_context(key: str):
+    """Kontekst eksportu z ustawionym motywem (do użycia w ``with``)."""
+    token = _THEME_KEY.set(C.resolve_motyw(key))
+    try:
+        yield
+    finally:
+        _THEME_KEY.reset(token)
 
 
 def safe_filename(name: str) -> str:
@@ -233,6 +464,54 @@ def _docx_paragraph_border_bottom(paragraph, color: str = "1F3864",
     p_pr.append(p_bdr)
 
 
+def _docx_watermark(section) -> None:
+    """Dodaje diagonalny znak wodny do nagłówka (również strony tytułowej)."""
+    from docx.oxml import parse_xml
+    from xml.sax.saxutils import escape
+
+    color = T("watermark_color")
+    font = escape(T("head_font"), {'"': "&quot;"})
+    text = escape(WATERMARK_TEXT, {'"': "&quot;"})
+    pict_xml = (
+        '<w:pict xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" '
+        'xmlns:v="urn:schemas-microsoft-com:vml" '
+        'xmlns:o="urn:schemas-microsoft-com:office:office">'
+        '<v:shapetype id="_x0000_t136" coordsize="21600,21600" o:spt="136" adj="10800" '
+        'path="m@7,l@8,m@5,21600l@6,21600e">'
+        '<v:formulas>'
+        '<v:f eqn="sum #0 0 10800"/><v:f eqn="prod #0 2 1"/>'
+        '<v:f eqn="sum 21600 0 @1"/><v:f eqn="sum 0 0 @2"/>'
+        '<v:f eqn="sum 21600 0 @3"/><v:f eqn="if @0 @3 0"/>'
+        '<v:f eqn="if @0 21600 @1"/><v:f eqn="if @0 0 @2"/>'
+        '<v:f eqn="if @0 @4 21600"/><v:f eqn="mid @5 @6"/>'
+        '<v:f eqn="mid @8 @5"/><v:f eqn="mid @7 @8"/>'
+        '<v:f eqn="mid @6 @7"/><v:f eqn="sum @6 0 @5"/>'
+        '</v:formulas>'
+        '<v:path textpathok="t" o:connecttype="custom" '
+        'o:connectlocs="@9,0;@10,10800;@11,21600;@12,10800" '
+        'o:connectangles="270,180,90,0"/>'
+        '<v:textpath on="t" fitshape="t"/>'
+        '<v:handles><v:h position="#0,bottomRight" xrange="6629,14971"/></v:handles>'
+        '<o:lock v:ext="edit" text="t" shapetype="t"/>'
+        '</v:shapetype>'
+        '<v:shape id="PowerPlusWaterMarkObject" o:spid="_x0000_s2049" '
+        'type="#_x0000_t136" '
+        'style="position:absolute;margin-left:0;margin-top:0;width:468pt;height:117pt;'
+        'rotation:315;z-index:-251658752;mso-position-horizontal:center;'
+        'mso-position-horizontal-relative:margin;mso-position-vertical:center;'
+        'mso-position-vertical-relative:margin" '
+        'o:allowincell="f" fillcolor="#' + color + '" stroked="f">'
+        '<v:fill opacity=".12"/>'
+        '<v:textpath style="font-family:&quot;' + font + '&quot;;font-size:1pt" '
+        'string="' + text + '"/>'
+        '</v:shape></w:pict>'
+    )
+    section.first_page_header.is_linked_to_previous = False
+    for header in (section.header, section.first_page_header):
+        par = header.add_paragraph()
+        par._p.append(parse_xml(pict_xml))
+
+
 def _docx_spacer(doc, pts: float) -> None:
     from docx.shared import Pt
 
@@ -258,7 +537,7 @@ def _docx_setup(doc) -> None:
     section.different_first_page_header_footer = True
 
     normal = doc.styles["Normal"]
-    _docx_set_style_font(normal, DOCX_BODY_FONT, 11)
+    _docx_set_style_font(normal, T("body_font"), T("body_size"))
     pf = normal.paragraph_format
     pf.space_before = Pt(0)
     pf.space_after = Pt(6)
@@ -266,7 +545,8 @@ def _docx_setup(doc) -> None:
     pf.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
 
     h1 = doc.styles["Heading 1"]
-    _docx_set_style_font(h1, DOCX_HEAD_FONT, 14, bold=True, color="1F3864")
+    _docx_set_style_font(h1, T("head_font"), T("h1_size"), bold=True,
+                         color=T("h1_color"))
     h1.paragraph_format.space_before = Pt(18)
     h1.paragraph_format.space_after = Pt(8)
     h1.paragraph_format.keep_with_next = True
@@ -274,7 +554,8 @@ def _docx_setup(doc) -> None:
     h1.paragraph_format.alignment = WD_ALIGN_PARAGRAPH.LEFT
 
     h2 = doc.styles["Heading 2"]
-    _docx_set_style_font(h2, DOCX_HEAD_FONT, 11.5, bold=True, color="2F5496")
+    _docx_set_style_font(h2, T("head_font"), T("h2_size"), bold=True,
+                         color=T("h2_color"))
     h2.paragraph_format.space_before = Pt(12)
     h2.paragraph_format.space_after = Pt(4)
     h2.paragraph_format.keep_with_next = True
@@ -299,6 +580,7 @@ def _docx_header_footer(doc, doc_title: str, short_name: str) -> None:
     from docx.shared import Pt, RGBColor
 
     section = doc.sections[0]
+    _docx_watermark(section)
 
     header = section.header
     par = header.paragraphs[0]
@@ -306,10 +588,10 @@ def _docx_header_footer(doc, doc_title: str, short_name: str) -> None:
     par.alignment = WD_ALIGN_PARAGRAPH.LEFT
     run = par.add_run(short_name)
     run.font.size = Pt(8)
-    run.font.name = DOCX_HEAD_FONT
-    run.font.color.rgb = RGBColor(0x59, 0x59, 0x59)
+    run.font.name = T("head_font")
+    run.font.color.rgb = RGBColor.from_string(T("muted_color"))
     par.paragraph_format.space_after = Pt(0)
-    _docx_paragraph_border_bottom(par, "BFBFBF", 4)
+    _docx_paragraph_border_bottom(par, T("rule_color"), 4)
 
     footer = section.footer
     par = footer.paragraphs[0]
@@ -318,18 +600,18 @@ def _docx_header_footer(doc, doc_title: str, short_name: str) -> None:
     par.paragraph_format.space_before = Pt(0)
     run = par.add_run("Strona ")
     run.font.size = Pt(8)
-    run.font.name = DOCX_HEAD_FONT
-    run.font.color.rgb = RGBColor(0x59, 0x59, 0x59)
+    run.font.name = T("head_font")
+    run.font.color.rgb = RGBColor.from_string(T("muted_color"))
     _docx_field(par, "PAGE", "1")
     run = par.add_run(" z ")
     run.font.size = Pt(8)
-    run.font.name = DOCX_HEAD_FONT
-    run.font.color.rgb = RGBColor(0x59, 0x59, 0x59)
+    run.font.name = T("head_font")
+    run.font.color.rgb = RGBColor.from_string(T("muted_color"))
     _docx_field(par, "NUMPAGES", "1")
     for r in par.runs:
         r.font.size = Pt(8)
-        r.font.name = DOCX_HEAD_FONT
-        r.font.color.rgb = RGBColor(0x59, 0x59, 0x59)
+        r.font.name = T("head_font")
+        r.font.color.rgb = RGBColor.from_string(T("muted_color"))
 
 
 def _docx_title_page(doc, doc_obj) -> None:
@@ -343,35 +625,36 @@ def _docx_title_page(doc, doc_obj) -> None:
     par.alignment = WD_ALIGN_PARAGRAPH.CENTER
     par.paragraph_format.space_after = Pt(2)
     run = par.add_run(meta.get("part", "CZĘŚĆ OPISOWA"))
-    run.font.name = DOCX_HEAD_FONT
+    run.font.name = T("head_font")
     run.font.size = Pt(10)
     run.font.bold = True
-    run.font.color.rgb = RGBColor(0x7F, 0x7F, 0x7F)
+    run.font.color.rgb = RGBColor.from_string(T("faint_color"))
 
     par = doc.add_paragraph()
     par.alignment = WD_ALIGN_PARAGRAPH.CENTER
     par.paragraph_format.space_after = Pt(4)
     run = par.add_run(meta.get("element", doc_obj.element))
-    run.font.name = DOCX_HEAD_FONT
+    run.font.name = T("head_font")
     run.font.size = Pt(17)
     run.font.bold = True
-    run.font.color.rgb = RGBColor(0x1F, 0x38, 0x64)
+    run.font.color.rgb = RGBColor.from_string(T("h1_color"))
 
     par = doc.add_paragraph()
     par.alignment = WD_ALIGN_PARAGRAPH.CENTER
     par.paragraph_format.space_after = Pt(26)
     run = par.add_run(meta.get("doc_type") or "PROJEKT BUDOWLANY")
-    run.font.name = DOCX_HEAD_FONT
+    run.font.name = T("head_font")
     run.font.size = Pt(11)
-    run.font.color.rgb = RGBColor(0x40, 0x40, 0x40)
-    _docx_paragraph_border_bottom(par, "1F3864", 8)
+    run.font.color.rgb = RGBColor.from_string(T("meta_color"))
+    _docx_paragraph_border_bottom(par, T("hr_color"),
+                                  T("cover_rule_size"))
 
     par = doc.add_paragraph()
     par.alignment = WD_ALIGN_PARAGRAPH.CENTER
     par.paragraph_format.space_before = Pt(10)
     par.paragraph_format.space_after = Pt(18)
     run = par.add_run(meta.get("nazwa", ""))
-    run.font.name = DOCX_HEAD_FONT
+    run.font.name = T("head_font")
     run.font.size = Pt(14)
     run.font.bold = True
 
@@ -389,13 +672,13 @@ def _docx_title_page(doc, doc_obj) -> None:
 
     table = doc.add_table(rows=0, cols=2)
     table.autofit = False
-    _docx_borders(table, "BFBFBF", 4)
+    _docx_borders(table, T("rule_color"), 4)
     _docx_cell_margins(table, 70, 110, 70, 110)
     for label, value in rows:
         cells = table.add_row().cells
         cells[0].width = Cm(4.2)
         cells[1].width = Cm(12.3)
-        _docx_shade(cells[0], "F2F5FA")
+        _docx_shade(cells[0], T("cover_label_fill"))
         _docx_cell_text(cells[0], label, bold=True, size=9.5)
         _docx_cell_text(cells[1], value, size=9.5)
 
@@ -413,7 +696,7 @@ def _docx_title_page(doc, doc_obj) -> None:
 
     table = doc.add_table(rows=1, cols=4)
     table.autofit = False
-    _docx_borders(table, "7F7F7F", 4)
+    _docx_borders(table, T("faint_color"), 4)
     _docx_cell_margins(table, 60, 90, 60, 90)
     head = table.rows[0]
     _docx_repeat_header(head)
@@ -421,7 +704,7 @@ def _docx_title_page(doc, doc_obj) -> None:
     for cell, label, width in zip(head.cells, ("Funkcja", "Imię i nazwisko / specjalność",
                                                "Nr uprawnień", "Podpis"), widths):
         cell.width = width
-        _docx_shade(cell, "E7ECF5")
+        _docx_shade(cell, T("head_fill"))
         _docx_cell_text(cell, label, bold=True, size=8.5, align="center")
 
     for role, person, spec, lic in sign_rows:
@@ -440,7 +723,7 @@ def _docx_title_page(doc, doc_obj) -> None:
     par.paragraph_format.space_after = Pt(2)
     run = par.add_run(meta.get("adres", ""))
     run.font.size = Pt(9)
-    run.font.color.rgb = RGBColor(0x40, 0x40, 0x40)
+    run.font.color.rgb = RGBColor.from_string(T("meta_color"))
 
     par = doc.add_paragraph()
     par.alignment = WD_ALIGN_PARAGRAPH.RIGHT
@@ -454,7 +737,7 @@ def _docx_title_page(doc, doc_obj) -> None:
     run = par.add_run(f"Zakres opracowania: {meta.get('zakres', '')}")
     run.font.size = Pt(8)
     run.font.italic = True
-    run.font.color.rgb = RGBColor(0x59, 0x59, 0x59)
+    run.font.color.rgb = RGBColor.from_string(T("muted_color"))
 
 
 def _docx_toc(doc) -> None:
@@ -466,7 +749,7 @@ def _docx_toc(doc) -> None:
     par.alignment = WD_ALIGN_PARAGRAPH.LEFT
     par.paragraph_format.space_after = Pt(12)
     run = par.add_run("SPIS TREŚCI")
-    run.font.name = DOCX_HEAD_FONT
+    run.font.name = T("head_font")
     run.font.size = Pt(14)
     run.font.bold = True
 
@@ -499,14 +782,14 @@ def _docx_table(doc, block: dict) -> None:
         run = par.add_run(caption)
         run.font.size = Pt(9)
         run.font.bold = True
-        run.font.name = DOCX_HEAD_FONT
-        run.font.color.rgb = RGBColor(0x40, 0x40, 0x40)
+        run.font.name = T("head_font")
+        run.font.color.rgb = RGBColor.from_string(T("meta_color"))
 
     ncols = max([len(head)] + [len(r) for r in rows] + [1])
     table = doc.add_table(rows=0, cols=ncols)
     table.alignment = WD_TABLE_ALIGNMENT.CENTER
     table.autofit = False
-    _docx_borders(table, "8C8C8C", 4)
+    _docx_borders(table, T("grid_color"), 4)
     _docx_cell_margins(table, 40, 80, 40, 80)
 
     usable_cm = 16.5
@@ -521,7 +804,7 @@ def _docx_table(doc, block: dict) -> None:
         _docx_repeat_header(row)
         for cell, label, width in zip(row.cells, head, col_cm):
             cell.width = Cm(width)
-            _docx_shade(cell, "E7ECF5")
+            _docx_shade(cell, T("head_fill"))
             _docx_cell_text(cell, label, bold=True, size=8.5, align="center")
 
     for values in rows:
@@ -540,13 +823,13 @@ def _docx_note(doc, text: str) -> None:
 
     table = doc.add_table(rows=1, cols=1)
     table.autofit = False
-    _docx_borders(table, "C9C9C9", 4)
+    _docx_borders(table, T("note_border_color"), 4)
     _docx_cell_margins(table, 80, 140, 80, 140)
     cell = table.rows[0].cells[0]
     cell.width = Cm(16.5)
-    _docx_shade(cell, "F7F7F7")
+    _docx_shade(cell, T("note_fill"))
     _docx_cell_text(cell, text, size=9, italic=True, align="justify",
-                    color="333333")
+                    color=T("note_color"))
     par = doc.add_paragraph()
     par.paragraph_format.space_after = Pt(4)
     par.paragraph_format.line_spacing = Pt(4)
@@ -569,11 +852,17 @@ def _docx_sign(doc, block: dict) -> None:
             par.add_run().add_break()
         run = par.add_run(line)
         run.font.size = Pt(10)
-        run.font.name = DOCX_HEAD_FONT
+        run.font.name = T("head_font")
 
 
 def export_docx(doc_obj, path: str, data: dict | None = None) -> str:
-    """Zapisuje dokument jako plik .docx. Zwraca ścieżkę."""
+    """Zapisuje dokument jako plik .docx w wybranym motywie."""
+    with theme_context(resolve_theme(data, doc_obj)):
+        return _export_docx(doc_obj, path, data)
+
+
+def _export_docx(doc_obj, path: str, data: dict | None = None) -> str:
+    """Właściwa budowa pliku .docx (zakłada ustawiony kontekst motywu)."""
     from docx import Document
     from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_BREAK
     from docx.shared import Cm, Pt
@@ -607,7 +896,8 @@ def export_docx(doc_obj, path: str, data: dict | None = None) -> str:
         kind = block.get("t")
         if kind == "h1":
             par = doc.add_paragraph(block.get("x", ""), style="Heading 1")
-            _docx_paragraph_border_bottom(par, "D9D9D9", 4)
+            _docx_paragraph_border_bottom(par, T("h1_rule_color"),
+                                          T("h1_rule_size"))
         elif kind == "h2":
             doc.add_paragraph(block.get("x", ""), style="Heading 2")
         elif kind == "p":
@@ -654,45 +944,47 @@ def export_docx(doc_obj, path: str, data: dict | None = None) -> str:
 # PDF
 # ---------------------------------------------------------------------------
 
-_FONTS_READY = False
-_FONTS_OK = True
-
-
 def _register_pdf_fonts() -> bool:
-    """Rejestruje TTF z polskimi znakami. Zwraca False, gdy brak fontów."""
-    global _FONTS_READY, _FONTS_OK
-    if _FONTS_READY:
-        return _FONTS_OK
-    _FONTS_READY = True
+    """Rejestruje TTF aktualnego motywu. Zwraca False, gdy brak fontów."""
+    key = theme_key()
+    if key in _FONTS_READY:
+        return _FONTS_OK.get(key, False)
+    _FONTS_READY[key] = True
     try:
         from reportlab.pdfbase import pdfmetrics
+        from reportlab.pdfbase.pdfmetrics import registerFontFamily
         from reportlab.pdfbase.ttfonts import TTFont
 
-        chosen: dict[str, str] = {}
-        for role, candidates in FONT_CANDIDATES.items():
+        regular_name = T("pdf_font")
+        bold_name = T("pdf_bold")
+        chosen: dict[str, tuple[str, int]] = {}
+        for role, candidates in T("pdf_files").items():
             for file_path, index in candidates:
                 if os.path.exists(file_path):
-                    chosen[role] = file_path
+                    chosen[role] = (file_path, index)
                     break
         if "regular" not in chosen:
-            _FONTS_OK = False
+            _FONTS_OK[key] = False
             return False
-        pdfmetrics.registerFont(TTFont(PDF_SANS, chosen["regular"]))
+        path, index = chosen["regular"]
+        pdfmetrics.registerFont(TTFont(regular_name, path, subfontIndex=index))
         if "bold" in chosen:
-            pdfmetrics.registerFont(TTFont(PDF_SANS_BOLD, chosen["bold"]))
+            path, index = chosen["bold"]
+            pdfmetrics.registerFont(TTFont(bold_name, path, subfontIndex=index))
         else:
-            pdfmetrics.registerFont(TTFont(PDF_SANS_BOLD, chosen["regular"]))
-        from reportlab.pdfbase.pdfmetrics import registerFontFamily
+            pdfmetrics.registerFont(TTFont(bold_name, chosen["regular"][0],
+                                           subfontIndex=chosen["regular"][1]))
         registerFontFamily(
-            PDF_SANS,
-            normal=PDF_SANS,
-            bold=PDF_SANS_BOLD,
-            italic=PDF_SANS,
-            boldItalic=PDF_SANS_BOLD,
+            regular_name,
+            normal=regular_name,
+            bold=bold_name,
+            italic=regular_name,
+            boldItalic=bold_name,
         )
+        _FONTS_OK[key] = True
         return True
     except Exception:
-        _FONTS_OK = False
+        _FONTS_OK[key] = False
         return False
 
 
@@ -823,8 +1115,10 @@ class _PdfBuilder:
 
         self.doc_obj = doc_obj
         self.footer_text = footer_text
-        self.font = PDF_SANS if _register_pdf_fonts() else "Helvetica"
-        self.font_bold = PDF_SANS_BOLD if _register_pdf_fonts() else "Helvetica-Bold"
+        _register_pdf_fonts()
+        self.font = T("pdf_font") if _FONTS_OK.get(theme_key()) else "Helvetica"
+        self.font_bold = (T("pdf_bold") if _FONTS_OK.get(theme_key())
+                          else "Helvetica-Bold")
         self.page_w, self.page_h = A4
         self.left = 22 * mm
         self.right = 18 * mm
@@ -865,20 +1159,37 @@ class _PdfBuilder:
             self.doc.addPageTemplates([body_tpl, cover_tpl])
 
     # -- strony ---------------------------------------------------------
+    def _watermark(self, canvas):
+        """Znak wodny „BIM ARCHITECTS & CONSULTANTS WERSJA TESTOWA”."""
+        from reportlab.lib import colors
+
+        canvas.saveState()
+        canvas.setFillColor(colors.HexColor("#" + T("watermark_color")))
+        try:
+            canvas.setFillAlpha(0.13)
+        except Exception:  # starsze wersje reportlab
+            pass
+        canvas.translate(self.page_w / 2, self.page_h / 2)
+        canvas.rotate(32)
+        canvas.setFont(self.font_bold, 26)
+        canvas.drawCentredString(0, -8, WATERMARK_TEXT)
+        canvas.restoreState()
+
     def _on_cover(self, canvas, doc):
-        pass
+        self._watermark(canvas)
 
     def _on_body(self, canvas, doc):
         from reportlab.lib import colors
         from reportlab.lib.units import mm
 
+        self._watermark(canvas)
         canvas.saveState()
-        canvas.setStrokeColor(colors.HexColor("#BFBFBF"))
+        canvas.setStrokeColor(colors.HexColor("#" + T("rule_color")))
         canvas.setLineWidth(0.5)
         y = self.page_h - 16 * mm
         canvas.line(self.left, y, self.page_w - self.right, y)
         canvas.setFont(self.font, 7.5)
-        canvas.setFillColor(colors.HexColor("#595959"))
+        canvas.setFillColor(colors.HexColor("#" + T("muted_color")))
         canvas.drawString(self.left, y + 2 * mm, self.footer_text[:110])
         canvas.restoreState()
 
@@ -888,63 +1199,74 @@ class _PdfBuilder:
         from reportlab.lib.enums import TA_CENTER, TA_JUSTIFY, TA_LEFT, TA_RIGHT
         from reportlab.lib.styles import ParagraphStyle
 
-        base = dict(fontName=self.font, fontSize=10, leading=14.5,
-                    textColor=colors.black)
+        def hx(name: str):
+            return colors.HexColor("#" + T(name))
+
+        base = dict(fontName=self.font, fontSize=T("pdf_body_size"),
+                    leading=14.5, textColor=hx("cell_color"))
         return {
             "body": ParagraphStyle("Body", alignment=TA_JUSTIFY,
                                    spaceAfter=5, **base),
-            "h1": ParagraphStyle("H1", fontName=self.font_bold, fontSize=13,
+            "h1": ParagraphStyle("H1", fontName=self.font_bold,
+                                 fontSize=T("pdf_h1_size"),
                                  leading=17, spaceBefore=14, spaceAfter=6,
-                                 textColor=colors.HexColor("#1F3864"),
+                                 textColor=hx("h1_color"),
                                  keepWithNext=1, alignment=TA_LEFT),
-            "h2": ParagraphStyle("H2", fontName=self.font_bold, fontSize=10.8,
+            "h2": ParagraphStyle("H2", fontName=self.font_bold,
+                                 fontSize=T("pdf_h2_size"),
                                  leading=14, spaceBefore=9, spaceAfter=3,
-                                 textColor=colors.HexColor("#2F5496"),
+                                 textColor=hx("h2_color"),
                                  keepWithNext=1, alignment=TA_LEFT),
             "caption": ParagraphStyle("Caption", fontName=self.font_bold,
                                       fontSize=8.8, leading=11,
                                       spaceBefore=7, spaceAfter=3,
-                                      textColor=colors.HexColor("#404040"),
+                                      textColor=hx("meta_color"),
                                       alignment=TA_LEFT),
             "cell": ParagraphStyle("Cell", fontName=self.font, fontSize=8,
-                                   leading=10, alignment=TA_LEFT),
+                                   leading=10, alignment=TA_LEFT,
+                                   textColor=hx("cell_color")),
             "cell_c": ParagraphStyle("CellC", fontName=self.font, fontSize=8,
-                                     leading=10, alignment=TA_CENTER),
+                                     leading=10, alignment=TA_CENTER,
+                                     textColor=hx("cell_color")),
             "head": ParagraphStyle("Head", fontName=self.font_bold, fontSize=8,
                                    leading=10, alignment=TA_CENTER,
-                                   textColor=colors.HexColor("#1F3864")),
+                                   textColor=hx("h1_color")),
             "note": ParagraphStyle("Note", fontName=self.font, fontSize=8.7,
                                    leading=11.5,
-                                   textColor=colors.HexColor("#333333"),
+                                   textColor=hx("note_color"),
                                    alignment=TA_JUSTIFY),
             "toc0": ParagraphStyle("TOC0", fontName=self.font_bold, fontSize=9.5,
-                                   leading=13, spaceBefore=4),
+                                   leading=13, spaceBefore=4,
+                                   textColor=hx("h1_color")),
             "toc1": ParagraphStyle("TOC1", fontName=self.font, fontSize=9,
-                                   leading=12, leftIndent=12),
+                                   leading=12, leftIndent=12,
+                                   textColor=hx("cell_color")),
             "toc_title": ParagraphStyle("TOCTitle", fontName=self.font_bold,
                                         fontSize=14, leading=18, spaceAfter=14,
-                                        textColor=colors.HexColor("#1F3864")),
+                                        textColor=hx("h1_color")),
             "cover_part": ParagraphStyle("CoverPart", fontName=self.font_bold,
                                          fontSize=9, leading=12,
                                          alignment=TA_CENTER,
-                                         textColor=colors.HexColor("#7F7F7F")),
+                                         textColor=hx("faint_color")),
             "cover_element": ParagraphStyle("CoverElement", fontName=self.font_bold,
                                             fontSize=16, leading=20,
                                             alignment=TA_CENTER,
-                                            textColor=colors.HexColor("#1F3864")),
+                                            textColor=hx("h1_color")),
             "cover_doc": ParagraphStyle("CoverDoc", fontName=self.font, fontSize=11,
                                         leading=14, alignment=TA_CENTER,
-                                        textColor=colors.HexColor("#404040")),
+                                        textColor=hx("meta_color")),
             "cover_name": ParagraphStyle("CoverName", fontName=self.font_bold,
                                          fontSize=13.5, leading=18,
-                                         alignment=TA_CENTER),
+                                         alignment=TA_CENTER,
+                                         textColor=hx("cell_color")),
             "cover_small": ParagraphStyle("CoverSmall", fontName=self.font,
                                           fontSize=8.5, leading=11,
                                           alignment=TA_RIGHT,
-                                          textColor=colors.HexColor("#404040")),
+                                          textColor=hx("meta_color")),
             "sign": ParagraphStyle("Sign", fontName=self.font, fontSize=10,
                                    leading=14, alignment=TA_RIGHT,
-                                   spaceBefore=10),
+                                   spaceBefore=10,
+                                   textColor=hx("cell_color")),
         }
 
     def _cover(self, st):
@@ -954,6 +1276,10 @@ class _PdfBuilder:
                                         TableStyle)
 
         meta = self.doc_obj.meta
+
+        def hx(name: str):
+            return colors.HexColor("#" + T(name))
+
         story = [Spacer(1, 14 * mm),
                  Paragraph(meta.get("part", "CZĘŚĆ OPISOWA"), st["cover_part"]),
                  Spacer(1, 3 * mm),
@@ -962,7 +1288,8 @@ class _PdfBuilder:
                  Spacer(1, 2 * mm),
                  Paragraph(meta.get("doc_type") or "PROJEKT BUDOWLANY", st["cover_doc"]),
                  Spacer(1, 4 * mm),
-                 HRFlowable(width="100%", thickness=1.1, color=colors.HexColor("#1F3864")),
+                 HRFlowable(width="100%", thickness=T("hr_thickness"),
+                             color=hx("hr_color")),
                  Spacer(1, 8 * mm),
                  Paragraph(meta.get("nazwa", ""), st["cover_name"]),
                  Spacer(1, 10 * mm)]
@@ -985,8 +1312,8 @@ class _PdfBuilder:
                 for label, value in rows]
         table = Table(data, colWidths=[36 * mm, 129 * mm])
         table.setStyle(TableStyle([
-            ("GRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#BFBFBF")),
-            ("BACKGROUND", (0, 0), (0, -1), colors.HexColor("#F2F5FA")),
+            ("GRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#" + T("rule_color"))),
+            ("BACKGROUND", (0, 0), (0, -1), colors.HexColor("#" + T("cover_label_fill"))),
             ("VALIGN", (0, 0), (-1, -1), "TOP"),
             ("LEFTPADDING", (0, 0), (-1, -1), 5),
             ("RIGHTPADDING", (0, 0), (-1, -1), 5),
@@ -1022,8 +1349,8 @@ class _PdfBuilder:
             ])
         table = Table(sign, colWidths=[28 * mm, 62 * mm, 45 * mm, 30 * mm])
         table.setStyle(TableStyle([
-            ("GRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#8C8C8C")),
-            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#E7ECF5")),
+            ("GRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#" + T("grid_color"))),
+            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#" + T("head_fill"))),
             ("VALIGN", (0, 0), (-1, -1), "TOP"),
             ("TOPPADDING", (0, 0), (-1, -1), 4),
             ("BOTTOMPADDING", (0, 0), (-1, -1), 10),
@@ -1084,7 +1411,7 @@ class _PdfBuilder:
                 ])
             table = Table(data, colWidths=col_w, repeatRows=1 if head else 0)
             style = [
-                ("GRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#8C8C8C")),
+                ("GRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#" + T("grid_color"))),
                 ("VALIGN", (0, 0), (-1, -1), "TOP"),
                 ("LEFTPADDING", (0, 0), (-1, -1), 4),
                 ("RIGHTPADDING", (0, 0), (-1, -1), 4),
@@ -1093,7 +1420,7 @@ class _PdfBuilder:
             ]
             if head:
                 style.append(("BACKGROUND", (0, 0), (-1, 0),
-                              colors.HexColor("#E7ECF5")))
+                              colors.HexColor("#" + T("head_fill"))))
             flows = []
             if block.get("caption"):
                 flows.append(Paragraph(block["caption"], st["caption"]))
@@ -1104,8 +1431,8 @@ class _PdfBuilder:
             table = Table([[Paragraph(block.get("x", ""), st["note"])]],
                           colWidths=[self.page_w - self.left - self.right])
             table.setStyle(TableStyle([
-                ("BOX", (0, 0), (-1, -1), 0.5, colors.HexColor("#C9C9C9")),
-                ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#F7F7F7")),
+                ("BOX", (0, 0), (-1, -1), 0.5, colors.HexColor("#" + T("note_border_color"))),
+                ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#" + T("note_fill"))),
                 ("LEFTPADDING", (0, 0), (-1, -1), 8),
                 ("RIGHTPADDING", (0, 0), (-1, -1), 8),
                 ("TOPPADDING", (0, 0), (-1, -1), 5),
@@ -1142,12 +1469,15 @@ class _PdfBuilder:
             story.extend(self._block_flowables(block, st))
 
         self.doc.filename = path
-        self.doc.multiBuild(story,
-                            canvasmaker=_footer_canvas(self.footer_text, self.font))
+        self.doc.multiBuild(
+            story,
+            canvasmaker=_footer_canvas(self.footer_text, self.font,
+                                       T("muted_color")),
+        )
         return path
 
 
-def _footer_canvas(footer_text: str, font_name: str):
+def _footer_canvas(footer_text: str, font_name: str, color: str = "595959"):
     """Kanwa z numeracją „Strona X z Y”."""
     from reportlab.lib import colors
     from reportlab.lib.units import mm
@@ -1169,7 +1499,7 @@ def _footer_canvas(footer_text: str, font_name: str):
                 if self._pageNumber > 1:
                     self.saveState()
                     self.setFont(font_name, 8)
-                    self.setFillColor(colors.HexColor("#595959"))
+                    self.setFillColor(colors.HexColor("#" + color))
                     self.drawCentredString(self._pagesize[0] / 2, 11 * mm,
                                            f"Strona {self._pageNumber} z {total}")
                     self.restoreState()
@@ -1180,7 +1510,13 @@ def _footer_canvas(footer_text: str, font_name: str):
 
 
 def export_pdf(doc_obj, path: str, data: dict | None = None) -> str:
-    """Zapisuje dokument jako plik .pdf. Zwraca ścieżkę."""
+    """Zapisuje dokument jako plik .pdf w wybranym motywie."""
+    with theme_context(resolve_theme(data, doc_obj)):
+        return _export_pdf(doc_obj, path, data)
+
+
+def _export_pdf(doc_obj, path: str, data: dict | None = None) -> str:
+    """Właściwa budowa pliku .pdf (zakłada ustawiony kontekst motywu)."""
     path = os.path.abspath(path)
     if not path.lower().endswith(".pdf"):
         path += ".pdf"

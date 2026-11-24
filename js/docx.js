@@ -11,8 +11,22 @@
   const PAGE_H = 16838; // 29,7 cm
   const MARGIN = { top: 1417, bottom: 1247, left: 1417, right: 1134 };
   const USABLE = PAGE_W - MARGIN.left - MARGIN.right; // 9355 = 16,5 cm
-  const BODY_FONT = "Times New Roman";
-  const HEAD_FONT = "Arial";
+
+  // Ustawienia wybranego motywu dokumentu (project.meta.motyw).
+  let T = window.PABTheme.get("motyw-1");
+
+  function useTheme(doc, value) {
+    const chosen = value === undefined || value === null
+      ? (doc && doc.meta ? doc.meta.motyw : null)
+      : value;
+    T = window.PABTheme.use(doc, chosen);
+    return T;
+  }
+
+  /** Kolor w formacie OOXML (bez znaku #). */
+  function hx(color) {
+    return String(color || "").replace("#", "").toUpperCase();
+  }
 
   function esc(value) {
     return String(value === undefined || value === null ? "" : value)
@@ -55,7 +69,7 @@
     if (o.style) out += '<w:pStyle w:val="' + o.style + '"/>';
     if (o.keepNext) out += "<w:keepNext/>";
     if (o.keepLines) out += "<w:keepLines/>";
-    if (o.border) {
+    if (o.border && o.border.size) {
       out +=
         '<w:pBdr><w:bottom w:val="single" w:sz="' +
         (o.border.size || 4) +
@@ -128,7 +142,7 @@
     const lines = String(text === undefined || text === null ? "" : text).split("\n");
     const paragraphs = lines
       .map(function (line) {
-        return para(run(line, { size: o.size || 17, b: o.bold, i: o.italic, color: o.color }), {
+        return para(run(line, { font: o.font, size: o.size || 17, b: o.bold, i: o.italic, color: o.color }), {
           spacing: { before: 0, after: 20, line: 240, rule: "auto" },
           jc: o.align || "left",
         });
@@ -165,7 +179,7 @@
             ' w:val="single" w:sz="' +
             (opts.borderSize || 4) +
             '" w:space="0" w:color="' +
-            (opts.borderColor || "8C8C8C") +
+            (opts.borderColor || hx(T.grid)) +
             '"/>'
           );
         })
@@ -196,7 +210,7 @@
           .map(function (label, i) {
             return cell(label, {
               width: widths[i],
-              fill: opts.headFill || "E7ECF5",
+              fill: opts.headFill || hx(T.headFill),
               bold: true,
               size: opts.size || 17,
               align: "center",
@@ -215,8 +229,9 @@
               width: w,
               size: opts.size || 17,
               align: opts.cellAlign || "left",
-              fill: opts.colFill ? opts.colFill[i] : undefined,
+              fill: opts.colFill ? opts.colFill[i] : opts.cellFill,
               bold: opts.colBold ? opts.colBold[i] : false,
+              italic: opts.italic,
             });
           })
           .join("") +
@@ -238,25 +253,25 @@
     const parts = [];
     parts.push(spacer(12));
     parts.push(
-      para(run(meta.part === undefined || meta.part === null ? "CZĘŚĆ OPISOWA" : meta.part, { font: HEAD_FONT, size: 20, b: true, color: "7F7F7F" }), {
+      para(run(meta.part === undefined || meta.part === null ? "CZĘŚĆ OPISOWA" : meta.part, { font: T.headFont, size: 20, b: true, color: hx(T.faint) }), {
         jc: "center",
         spacing: { after: 40 },
       })
     );
     parts.push(
-      para(run(meta.element || element, { font: HEAD_FONT, size: 34, b: true, color: "1F3864" }), {
+      para(run(meta.element || element, { font: T.headFont, size: 34, b: true, color: hx(T.h1) }), {
         jc: "center",
         spacing: { after: 80 },
       })
     );
     parts.push(
       para(
-        run(meta.doc_type || "PROJEKT BUDOWLANY", { font: HEAD_FONT, size: 22, color: "404040" }),
-        { jc: "center", spacing: { after: 520 }, border: { color: "1F3864", size: 8, space: 4 } }
+        run(meta.doc_type || "PROJEKT BUDOWLANY", { font: T.headFont, size: 22, color: hx(T.meta) }),
+        { jc: "center", spacing: { after: 520 }, border: { color: hx(T.h1), size: T.docx.coverRuleSize, space: 4 } }
       )
     );
     parts.push(
-      para(run(meta.nazwa || "", { font: HEAD_FONT, size: 28, b: true }), {
+      para(run(meta.nazwa || "", { font: T.headFont, size: 28, b: true }), {
         jc: "center",
         spacing: { before: 200, after: 360 },
       })
@@ -277,7 +292,7 @@
     parts.push(
       tableXml({
         widths: [2381, 6974],
-        borderColor: "BFBFBF",
+        borderColor: hx(T.rule),
         marginTop: 70,
         marginLeft: 110,
         marginBottom: 70,
@@ -285,7 +300,7 @@
         size: 19,
         rows: rows,
         cellAlign: "left",
-        colFill: ["F2F5FA", undefined],
+        colFill: [hx(T.labelFill), undefined],
         colBold: [true, false],
         trail: false,
       })
@@ -314,8 +329,8 @@
     parts.push(
       tableXml({
         widths: widths,
-        borderColor: "7F7F7F",
-        headFill: "E7ECF5",
+        borderColor: hx(T.faint),
+        headFill: hx(T.headFill),
         marginTop: 60,
         marginLeft: 90,
         marginBottom: 60,
@@ -331,7 +346,7 @@
 
     parts.push(spacer(26));
     parts.push(
-      para(run(meta.adres || "", { size: 18, color: "404040" }), {
+      para(run(meta.adres || "", { size: 18, color: hx(T.meta) }), {
         jc: "right",
         spacing: { after: 40 },
       })
@@ -340,7 +355,7 @@
       para(run(meta.data || "", { size: 19, b: true }), { jc: "right", spacing: { after: 40 } })
     );
     parts.push(
-      para(run("Zakres opracowania: " + (meta.zakres || ""), { size: 16, i: true, color: "595959" }), {
+      para(run("Zakres opracowania: " + (meta.zakres || ""), { size: 16, i: true, color: hx(T.muted) }), {
         jc: "right",
         spacing: { before: 40 },
       })
@@ -351,7 +366,7 @@
   function tocPage() {
     return (
       pageBreak() +
-      para(run("SPIS TREŚCI", { font: HEAD_FONT, size: 28, b: true }), {
+      para(run("SPIS TREŚCI", { font: T.headFont, size: T.docx.h1Size, b: true }), {
         spacing: { after: 240 },
       }) +
       para(
@@ -373,17 +388,17 @@
       const kind = block.t;
       if (kind === "h1") {
         out.push(
-          para(run(block.x || "", { font: HEAD_FONT, size: 28, b: true, color: "1F3864" }), {
+          para(run(block.x || "", { font: T.headFont, size: T.docx.h1Size, b: true, color: hx(T.h1) }), {
             style: "Heading1",
             keepNext: true,
             outline: 0,
             spacing: { before: 360, after: 160, line: 240, rule: "auto" },
-            border: { color: "D9D9D9", size: 4, space: 1 },
+            border: { color: hx(T.softRule), size: T.docx.h1RuleSize, space: 1 },
           })
         );
       } else if (kind === "h2") {
         out.push(
-          para(run(block.x || "", { font: HEAD_FONT, size: 23, b: true, color: "2F5496" }), {
+          para(run(block.x || "", { font: T.headFont, size: T.docx.h2Size, b: true, color: hx(T.h2) }), {
             style: "Heading2",
             keepNext: true,
             outline: 1,
@@ -427,7 +442,7 @@
         }
         if (block.caption) {
           out.push(
-            para(run(block.caption, { font: HEAD_FONT, size: 18, b: true, color: "404040" }), {
+            para(run(block.caption, { font: T.headFont, size: 18, b: true, color: hx(T.meta) }), {
               keepNext: true,
               spacing: { before: 160, after: 60 },
             })
@@ -438,13 +453,16 @@
         out.push(
           tableXml({
             widths: [USABLE],
-            borderColor: "C9C9C9",
+            borderColor: hx(T.noteRule),
             marginTop: 80,
             marginLeft: 140,
             marginBottom: 80,
             marginRight: 140,
             rows: [[block.x || ""]],
             cellAlign: "both",
+            cellFill: hx(T.noteFill),
+            size: 18,
+            italic: true,
           })
         );
       } else if (kind === "sign") {
@@ -454,7 +472,7 @@
             para(
               lines
                 .map(function (line) {
-                  return run(line, { font: HEAD_FONT, size: 20 });
+                  return run(line, { font: T.headFont, size: 20 });
                 })
                 .join("<w:r><w:br/></w:r>"),
               { jc: "right", spacing: { before: 280, after: 40 } }
@@ -475,29 +493,74 @@
   const XML_HEAD = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n';
 
   function stylesXml() {
+    const body = T.bodyFont;
+    const spacing = '<w:spacing w:after="120" w:line="' + T.docx.line + '" w:lineRule="auto"/>';
     return (
       XML_HEAD +
       '<w:styles xmlns:w="' + NS_W + '">' +
       "<w:docDefaults><w:rPrDefault><w:rPr>" +
-      '<w:rFonts w:ascii="' + BODY_FONT + '" w:hAnsi="' + BODY_FONT + '" w:cs="' + BODY_FONT + '"/>' +
-      '<w:sz w:val="22"/><w:szCs w:val="22"/>' +
+      '<w:rFonts w:ascii="' + body + '" w:hAnsi="' + body + '" w:cs="' + body + '"/>' +
+      '<w:sz w:val="' + T.docx.bodySize + '"/><w:szCs w:val="' + T.docx.bodySize + '"/>' +
       '<w:lang w:val="pl-PL"/>' +
       "</w:rPr></w:rPrDefault>" +
-      '<w:pPrDefault><w:pPr><w:spacing w:after="120" w:line="276" w:lineRule="auto"/><w:jc w:val="both"/></w:pPr></w:pPrDefault>' +
+      '<w:pPrDefault><w:pPr>' + spacing + '<w:jc w:val="both"/></w:pPr></w:pPrDefault>' +
       "</w:docDefaults>" +
       '<w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/><w:qFormat/>' +
-      "<w:pPr><w:spacing w:after=\"120\" w:line=\"276\" w:lineRule=\"auto\"/><w:jc w:val=\"both\"/></w:pPr>" +
-      '<w:rPr><w:rFonts w:ascii="' + BODY_FONT + '" w:hAnsi="' + BODY_FONT + '" w:cs="' + BODY_FONT + '"/><w:sz w:val="22"/><w:szCs w:val="22"/></w:rPr>' +
+      "<w:pPr>" + spacing + '<w:jc w:val="both"/></w:pPr>' +
+      '<w:rPr><w:rFonts w:ascii="' + body + '" w:hAnsi="' + body + '" w:cs="' + body + '"/>' +
+      '<w:sz w:val="' + T.docx.bodySize + '"/><w:szCs w:val="' + T.docx.bodySize + '"/></w:rPr>' +
       "</w:style>" +
       '<w:style w:type="paragraph" w:styleId="Heading1"><w:name w:val="heading 1"/><w:basedOn w:val="Normal"/><w:next w:val="Normal"/><w:qFormat/>' +
       '<w:pPr><w:keepNext/><w:spacing w:before="360" w:after="160"/><w:outlineLvl w:val="0"/></w:pPr>' +
-      '<w:rPr><w:rFonts w:ascii="' + HEAD_FONT + '" w:hAnsi="' + HEAD_FONT + '"/><w:b/><w:color w:val="1F3864"/><w:sz w:val="28"/><w:szCs w:val="28"/></w:rPr>' +
+      '<w:rPr><w:rFonts w:ascii="' + T.headFont + '" w:hAnsi="' + T.headFont + '"/><w:b/>' +
+      '<w:color w:val="' + hx(T.h1) + '"/><w:sz w:val="' + T.docx.h1Size + '"/><w:szCs w:val="' + T.docx.h1Size + '"/></w:rPr>' +
       "</w:style>" +
       '<w:style w:type="paragraph" w:styleId="Heading2"><w:name w:val="heading 2"/><w:basedOn w:val="Normal"/><w:next w:val="Normal"/><w:qFormat/>' +
       '<w:pPr><w:keepNext/><w:spacing w:before="240" w:after="80"/><w:outlineLvl w:val="1"/></w:pPr>' +
-      '<w:rPr><w:rFonts w:ascii="' + HEAD_FONT + '" w:hAnsi="' + HEAD_FONT + '"/><w:b/><w:color w:val="2F5496"/><w:sz w:val="23"/><w:szCs w:val="23"/></w:rPr>' +
+      '<w:rPr><w:rFonts w:ascii="' + T.headFont + '" w:hAnsi="' + T.headFont + '"/><w:b/>' +
+      '<w:color w:val="' + hx(T.h2) + '"/><w:sz w:val="' + T.docx.h2Size + '"/><w:szCs w:val="' + T.docx.h2Size + '"/></w:rPr>' +
       "</w:style>" +
       "</w:styles>"
+    );
+  }
+
+  /** Znak wodny w nagłówku – VML czytelny także w Wordzie. */
+  function watermarkXml(suffix) {
+    const color = hx(T.watermarkColor);
+    const font = esc(T.headFont);
+    const text = esc(T.watermark);
+    return (
+      '<w:r><w:pict xmlns:v="urn:schemas-microsoft-com:vml" ' +
+      'xmlns:o="urn:schemas-microsoft-com:office:office">' +
+      '<v:shapetype id="_x0000_t136_' + suffix + '" coordsize="21600,21600" ' +
+      'o:spt="136" adj="10800" path="m@7,l@8,m@5,21600l@6,21600e">' +
+      '<v:formulas>' +
+      '<v:f eqn="sum #0 0 10800"/><v:f eqn="prod #0 2 1"/>' +
+      '<v:f eqn="sum 21600 0 @1"/><v:f eqn="sum 0 0 @2"/>' +
+      '<v:f eqn="sum 21600 0 @3"/><v:f eqn="if @0 @3 0"/>' +
+      '<v:f eqn="if @0 21600 @1"/><v:f eqn="if @0 0 @2"/>' +
+      '<v:f eqn="if @0 @4 21600"/><v:f eqn="mid @5 @6"/>' +
+      '<v:f eqn="mid @8 @5"/><v:f eqn="mid @7 @8"/>' +
+      '<v:f eqn="mid @6 @7"/><v:f eqn="sum @6 0 @5"/>' +
+      '</v:formulas>' +
+      '<v:path textpathok="t" o:connecttype="custom" ' +
+      'o:connectlocs="@9,0;@10,10800;@11,21600;@12,10800" ' +
+      'o:connectangles="270,180,90,0"/>' +
+      '<v:textpath on="t" fitshape="t"/>' +
+      '<v:handles><v:h position="#0,bottomRight" xrange="6629,14971"/></v:handles>' +
+      '<o:lock v:ext="edit" text="t" shapetype="t"/>' +
+      '</v:shapetype>' +
+      '<v:shape id="' + suffix + 'Watermark" o:spid="_x0000_s' +
+      (suffix === "wm1" ? "2049" : "2050") + '" ' +
+      'type="#_x0000_t136_' + suffix + '" ' +
+      'style="position:absolute;margin-left:0;margin-top:0;width:468pt;height:117pt;' +
+      'rotation:315;z-index:-251658752;mso-position-horizontal:center;' +
+      'mso-position-horizontal-relative:margin;mso-position-vertical:center;' +
+      'mso-position-vertical-relative:margin" fillcolor="#' + color + '" stroked="f">' +
+      '<v:fill opacity=".12"/>' +
+      '<v:textpath style="font-family:&quot;' + font + '&quot;;font-size:1pt" ' +
+      'string="' + text + '"/>' +
+      '</v:shape></w:pict></w:r>'
     );
   }
 
@@ -506,15 +569,26 @@
       XML_HEAD +
       '<w:hdr xmlns:w="' + NS_W + '">' +
       para(
-        run(shortName, { font: HEAD_FONT, size: 16, color: "595959" }),
-        { spacing: { after: 0 }, border: { color: "BFBFBF", size: 4, space: 4 } }
+        run(shortName, { font: T.headFont, size: 16, color: hx(T.muted) }),
+        { spacing: { after: 0 }, border: { color: hx(T.rule), size: 4, space: 4 } }
       ) +
+      para(watermarkXml("wm1"), { spacing: { before: 0, after: 0 } }) +
+      "</w:hdr>"
+    );
+  }
+
+  /** Nagłówek strony tytułowej – sam znak wodny. */
+  function firstHeaderXml() {
+    return (
+      XML_HEAD +
+      '<w:hdr xmlns:w="' + NS_W + '">' +
+      para(watermarkXml("wm2"), { spacing: { before: 0, after: 0 } }) +
       "</w:hdr>"
     );
   }
 
   function footerXml() {
-    const style = { font: HEAD_FONT, size: 16, color: "595959" };
+    const style = { font: T.headFont, size: 16, color: hx(T.muted) };
     return (
       XML_HEAD +
       '<w:ftr xmlns:w="' + NS_W + '">' +
@@ -541,6 +615,7 @@
     const sect =
       "<w:sectPr>" +
       '<w:headerReference w:type="default" r:id="rId3"/>' +
+      '<w:headerReference w:type="first" r:id="rId5"/>' +
       '<w:footerReference w:type="default" r:id="rId4"/>' +
       '<w:pgSz w:w="' + PAGE_W + '" w:h="' + PAGE_H + '"/>' +
       '<w:pgMar w:top="' + MARGIN.top + '" w:right="' + MARGIN.right + '" w:bottom="' +
@@ -604,6 +679,7 @@
       '<Override PartName="/word/styles.xml" ContentType="' + w + '.styles+xml"/>' +
       '<Override PartName="/word/settings.xml" ContentType="' + w + '.settings+xml"/>' +
       '<Override PartName="/word/header1.xml" ContentType="' + w + '.header+xml"/>' +
+      '<Override PartName="/word/header2.xml" ContentType="' + w + '.header+xml"/>' +
       '<Override PartName="/word/footer1.xml" ContentType="' + w + '.footer+xml"/>' +
       '<Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/>' +
       '<Override PartName="/docProps/app.xml" ContentType="application/vnd.openxmlformats-officedocument.extended-properties+xml"/>' +
@@ -630,6 +706,7 @@
       '<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/settings" Target="settings.xml"/>' +
       '<Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" Target="header1.xml"/>' +
       '<Relationship Id="rId4" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer" Target="footer1.xml"/>' +
+      '<Relationship Id="rId5" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" Target="header2.xml"/>' +
       "</Relationships>"
     );
   }
@@ -647,7 +724,8 @@
     );
   }
 
-  function build(doc) {
+  function build(doc, theme) {
+    useTheme(doc, theme);
     const meta = doc.meta || {};
     const short = (meta.element || doc.element || "") + " – " + (meta.nazwa || "");
     const entries = [
@@ -659,6 +737,7 @@
       { name: "word/styles.xml", data: stylesXml() },
       { name: "word/settings.xml", data: settingsXml() },
       { name: "word/header1.xml", data: headerXml(short) },
+      { name: "word/header2.xml", data: firstHeaderXml() },
       { name: "word/footer1.xml", data: footerXml() },
       { name: "word/_rels/document.xml.rels", data: documentRelsXml() },
     ];

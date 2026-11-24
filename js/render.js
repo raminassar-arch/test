@@ -205,60 +205,79 @@
     const showCover = meta.cover !== false;
     const showToc = meta.toc !== false;
     const rendered = blocks(doc.blocks);
-    let html = "";
+    let html =
+      '<div class="doc-watermark" aria-hidden="true">' +
+      esc(window.PABTheme.WATERMARK) +
+      "</div>";
     if (showCover) html += cover(doc);
     if (showToc) html += toc(rendered.headings);
     html += '<div class="doc-body">' + rendered.html + "</div>";
     return html;
   }
 
+  /** CSS wydruku z tokenami wybranego motywu. */
+  function printCss(t) {
+    const coverRule = t.docx.coverRuleSize
+      ? (t.docx.coverRuleSize / 8) + "pt solid var(--pab-h1)"
+      : "none";
+    const h1Rule = t.docx.h1RuleSize
+      ? (t.docx.h1RuleSize / 8) + "pt solid var(--pab-soft-rule)"
+      : "none";
+    return window.PABTheme.cssVars(t.key, "body") + [
+      "@page{size:A4;margin:25mm 20mm 22mm 25mm}",
+      "html,body{margin:0;padding:0}",
+      "body{font-family:var(--pab-body);font-size:var(--pab-size);line-height:var(--pab-leading);color:var(--pab-ink)}",
+      ".doc-watermark{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%) rotate(-32deg);font-family:var(--pab-head);font-size:30pt;font-weight:700;color:var(--pab-watermark);opacity:0.11;white-space:nowrap;pointer-events:none;z-index:0}",
+      ".doc-cover,.doc-toc,.doc-body{position:relative;z-index:1}",
+      ".doc-cover{page-break-after:always}",
+      ".doc-toc{page-break-after:always}",
+      ".doc-part{text-align:center;font-family:var(--pab-head);font-size:10pt;font-weight:bold;color:var(--pab-faint);margin-top:8mm}",
+      ".doc-element{text-align:center;font-family:var(--pab-head);font-size:17pt;color:var(--pab-h1);margin:4mm 0 2mm}",
+      ".doc-type{text-align:center;font-family:var(--pab-head);font-size:11pt;color:var(--pab-meta);border-bottom:" + coverRule + ";padding-bottom:4mm;margin:0 0 6mm}",
+      ".doc-name{text-align:center;font-family:var(--pab-head);font-size:14pt;font-weight:bold;margin:0 0 8mm}",
+      "table.doc-meta{width:100%;border-collapse:collapse;margin-bottom:8mm;font-size:9.5pt}",
+      "table.doc-meta th,table.doc-meta td{border:0.5pt solid var(--pab-rule);padding:1.4mm 2mm;text-align:left;vertical-align:top}",
+      "table.doc-meta th{background:var(--pab-label-fill);width:25%;font-weight:bold}",
+      "table.doc-sign{width:100%;border-collapse:collapse;font-size:8.5pt}",
+      "table.doc-sign th,table.doc-sign td{border:0.5pt solid var(--pab-grid);padding:1.4mm 2mm;vertical-align:top;text-align:left}",
+      "table.doc-sign th{background:var(--pab-head-fill);text-align:center}",
+      "table.doc-sign .b{font-weight:bold}.doc-sign .spec{display:block;font-size:8pt;color:var(--pab-muted)}",
+      "table.doc-sign .c{text-align:center}.sign-cell{height:11mm}",
+      ".doc-foot{margin-top:12mm;text-align:right;font-size:9pt}",
+      ".doc-foot .b{font-weight:bold;font-size:9.5pt}.doc-foot .small{font-size:8pt;color:var(--pab-muted)}",
+      ".doc-foot .i{font-style:italic}",
+      ".doc-toc-title{font-family:var(--pab-head);font-size:var(--pab-h1-size);margin:0 0 5mm}",
+      ".doc-toc ol{list-style:none;padding:0;margin:0;font-size:10.5pt}",
+      ".doc-toc li{margin:0 0 1.4mm}.doc-toc li.lvl2{margin-left:6mm;font-size:10pt;color:var(--pab-muted)}",
+      ".doc-toc a{color:var(--pab-ink);text-decoration:none}",
+      ".doc-h1{font-family:var(--pab-head);font-size:var(--pab-h1-size);color:var(--pab-h1);margin:7mm 0 3mm;padding-bottom:1mm;border-bottom:" + h1Rule + ";page-break-after:avoid}",
+      ".doc-h2{font-family:var(--pab-head);font-size:var(--pab-h2-size);color:var(--pab-h2);margin:5mm 0 2mm;page-break-after:avoid}",
+      "p{margin:0 0 2.6mm;text-align:justify}",
+      "ul,ol{margin:0 0 3mm;padding-left:6mm}li{margin-bottom:1mm;text-align:justify}",
+      ".doc-table-wrap{margin:2mm 0 4mm;overflow:visible}",
+      ".doc-table{width:100%;border-collapse:collapse;font-size:8.5pt}",
+      ".doc-table th,.doc-table td{border:0.5pt solid var(--pab-grid);padding:1.3mm 1.6mm;vertical-align:top}",
+      ".doc-table th{background:var(--pab-head-fill);font-weight:bold;text-align:center}",
+      ".doc-caption{font-family:var(--pab-head);font-size:9pt;font-weight:bold;color:var(--pab-meta);margin:3mm 0 1mm}",
+      ".doc-note{border:0.5pt solid var(--pab-note-rule);background:var(--pab-note-fill);padding:2.4mm 3mm;font-size:9pt;font-style:italic;color:var(--pab-ink);margin:3mm 0 4mm;text-align:justify}",
+      ".doc-signblock{margin:6mm 0 4mm;text-align:right;font-family:var(--pab-head);font-size:10pt;line-height:1.6}",
+      ".doc-pagebreak{page-break-after:always}",
+      "thead{display:table-header-group}",
+      "tr{page-break-inside:avoid}",
+    ].join("");
+  }
+
   /** Pełny, samodzielny dokument HTML do wydruku / zapisu jako PDF. */
-  function printable(doc, meta) {
+  function printable(doc, meta, theme) {
     meta = meta || {};
+    const chosen = theme === undefined || theme === null ? meta.motyw : theme;
+    const t = window.PABTheme.use(doc, chosen);
     const title = (meta.nazwa || doc.title || "Dokument") + " – " + (doc.kind || "");
     return (
       "<!doctype html><html lang=\"pl\"><head><meta charset=\"utf-8\">" +
       "<title>" + esc(title) + "</title>" +
-      "<style>" +
-      "@page{size:A4;margin:25mm 20mm 22mm 25mm}" +
-      "html,body{margin:0;padding:0}" +
-      "body{font-family:'Times New Roman',Times,serif;font-size:11pt;line-height:1.35;color:#111}" +
-      ".doc-cover{page-break-after:always}" +
-      ".doc-toc{page-break-after:always}" +
-      ".doc-part{text-align:center;font-family:Arial,sans-serif;font-size:10pt;font-weight:bold;color:#7f7f7f;margin-top:8mm}" +
-      ".doc-element{text-align:center;font-family:Arial,sans-serif;font-size:17pt;color:#1f3864;margin:4mm 0 2mm}" +
-      ".doc-type{text-align:center;font-family:Arial,sans-serif;font-size:11pt;color:#404040;border-bottom:1pt solid #1f3864;padding-bottom:4mm;margin:0 0 6mm}" +
-      ".doc-name{text-align:center;font-family:Arial,sans-serif;font-size:14pt;font-weight:bold;margin:0 0 8mm}" +
-      "table.doc-meta{width:100%;border-collapse:collapse;margin-bottom:8mm;font-size:9.5pt}" +
-      "table.doc-meta th,table.doc-meta td{border:0.5pt solid #bfbfbf;padding:1.4mm 2mm;text-align:left;vertical-align:top}" +
-      "table.doc-meta th{background:#f2f5fa;width:25%;font-weight:bold}" +
-      "table.doc-sign{width:100%;border-collapse:collapse;font-size:8.5pt}" +
-      "table.doc-sign th,table.doc-sign td{border:0.5pt solid #7f7f7f;padding:1.4mm 2mm;vertical-align:top;text-align:left}" +
-      "table.doc-sign th{background:#e7ecf5;text-align:center}" +
-      "table.doc-sign .b{font-weight:bold}.doc-sign .spec{display:block;font-size:8pt;color:#333}" +
-      "table.doc-sign .c{text-align:center}.sign-cell{height:11mm}" +
-      ".doc-foot{margin-top:12mm;text-align:right;font-size:9pt}" +
-      ".doc-foot .b{font-weight:bold;font-size:9.5pt}.doc-foot .small{font-size:8pt;color:#595959}" +
-      ".doc-foot .i{font-style:italic}" +
-      ".doc-toc-title{font-family:Arial,sans-serif;font-size:14pt;margin:0 0 5mm}" +
-      ".doc-toc ol{list-style:none;padding:0;margin:0;font-size:10.5pt}" +
-      ".doc-toc li{margin:0 0 1.4mm}.doc-toc li.lvl2{margin-left:6mm;font-size:10pt;color:#333}" +
-      ".doc-toc a{color:#111;text-decoration:none}" +
-      ".doc-h1{font-family:Arial,sans-serif;font-size:14pt;color:#1f3864;margin:7mm 0 3mm;padding-bottom:1mm;border-bottom:0.5pt solid #d9d9d9;page-break-after:avoid}" +
-      ".doc-h2{font-family:Arial,sans-serif;font-size:11.5pt;color:#2f5496;margin:5mm 0 2mm;page-break-after:avoid}" +
-      "p{margin:0 0 2.6mm;text-align:justify}" +
-      "ul,ol{margin:0 0 3mm;padding-left:6mm}li{margin-bottom:1mm;text-align:justify}" +
-      ".doc-table-wrap{margin:2mm 0 4mm;overflow:visible}" +
-      ".doc-table{width:100%;border-collapse:collapse;font-size:8.5pt}" +
-      ".doc-table th,.doc-table td{border:0.5pt solid #8c8c8c;padding:1.3mm 1.6mm;vertical-align:top}" +
-      ".doc-table th{background:#e7ecf5;font-weight:bold;text-align:center}" +
-      ".doc-caption{font-family:Arial,sans-serif;font-size:9pt;font-weight:bold;color:#404040;margin:3mm 0 1mm}" +
-      ".doc-note{border:0.5pt solid #c9c9c9;background:#f7f7f7;padding:2.4mm 3mm;font-size:9pt;font-style:italic;color:#333;margin:3mm 0 4mm;text-align:justify}" +
-      ".doc-signblock{margin:6mm 0 4mm;text-align:right;font-family:Arial,sans-serif;font-size:10pt;line-height:1.6}" +
-      ".doc-pagebreak{page-break-after:always}" +
-      "thead{display:table-header-group}" +
-      "tr{page-break-inside:avoid}" +
-      "</style></head><body>" + document(doc) + "</body></html>"
+      "<style>" + printCss(t) + "</style>" +
+      "</head><body>" + document(doc) + "</body></html>"
     );
   }
 

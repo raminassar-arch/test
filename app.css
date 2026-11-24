@@ -336,6 +336,13 @@ main {
 .page-head h1 { margin: 0 0 2px; }
 .page-head p { margin: 0; color: var(--muted); font-size: 0.88rem; }
 .head-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.theme-inline { display: inline-flex; align-items: center; gap: 6px; font-size: 0.85rem; color: var(--muted); }
+.theme-inline select { width: auto; min-width: 170px; }
+.theme-panel { margin-bottom: 16px; }
+.theme-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.theme-row label { font-weight: 600; color: #33473a; }
+.theme-row select { width: auto; min-width: 210px; }
+#theme-opis { margin: 8px 0 0; }
 
 .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px 18px; }
 .field { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
@@ -519,48 +526,69 @@ select.inline { width: auto; min-width: 260px; }
   padding: 34px 42px 44px;
   max-width: 210mm;
   margin: 0 auto;
-  color: #111;
+  position: relative;
+  overflow: hidden;
+  color: var(--pab-ink, #111);
+  font-family: var(--pab-body, "Times New Roman", Times, serif);
+  font-size: var(--pab-size, 11pt);
+  line-height: var(--pab-leading, 1.35);
 }
 
+.paper .doc-watermark {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%) rotate(-32deg);
+  font-family: var(--pab-head, Arial, sans-serif);
+  font-size: 30pt;
+  font-weight: 700;
+  color: var(--pab-watermark, #1f3864);
+  opacity: 0.11;
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: 0;
+}
+.paper .doc-cover, .paper .doc-toc, .paper .doc-body { position: relative; z-index: 1; }
+
 .paper .doc-cover { padding-bottom: 8mm; }
-.paper .doc-part { text-align: center; font-family: Arial, sans-serif; font-size: 10pt; font-weight: 700; color: #7f7f7f; margin-top: 4mm; }
-.paper .doc-element { text-align: center; font-family: Arial, sans-serif; font-size: 17pt; color: #1f3864; margin: 4mm 0 2mm; }
-.paper .doc-type { text-align: center; font-family: Arial, sans-serif; font-size: 11pt; color: #404040; border-bottom: 1pt solid #1f3864; padding-bottom: 4mm; margin: 0 0 6mm; }
-.paper .doc-name { text-align: center; font-family: Arial, sans-serif; font-size: 14pt; font-weight: 700; margin: 0 0 8mm; }
+.paper .doc-part { text-align: center; font-family: var(--pab-head, Arial, sans-serif); font-size: 10pt; font-weight: 700; color: var(--pab-faint, #7f7f7f); margin-top: 4mm; }
+.paper .doc-element { text-align: center; font-family: var(--pab-head, Arial, sans-serif); font-size: 17pt; color: var(--pab-h1, #1f3864); margin: 4mm 0 2mm; }
+.paper .doc-type { text-align: center; font-family: var(--pab-head, Arial, sans-serif); font-size: 11pt; color: var(--pab-meta, #404040); border-bottom: var(--pab-cover-rule, 1pt) solid var(--pab-h1, #1f3864); padding-bottom: 4mm; margin: 0 0 6mm; }
+.paper .doc-name { text-align: center; font-family: var(--pab-head, Arial, sans-serif); font-size: 14pt; font-weight: 700; margin: 0 0 8mm; }
 .paper table.doc-meta { width: 100%; border-collapse: collapse; margin-bottom: 8mm; font-size: 9.5pt; }
-.paper table.doc-meta th, .paper table.doc-meta td { border: 0.5pt solid #bfbfbf; padding: 1.4mm 2mm; text-align: left; vertical-align: top; }
-.paper table.doc-meta th { background: #f2f5fa; width: 25%; font-weight: 700; }
+.paper table.doc-meta th, .paper table.doc-meta td { border: 0.5pt solid var(--pab-rule, #bfbfbf); padding: 1.4mm 2mm; text-align: left; vertical-align: top; }
+.paper table.doc-meta th { background: var(--pab-label-fill, #f2f5fa); width: 25%; font-weight: 700; }
 .paper table.doc-sign { width: 100%; border-collapse: collapse; font-size: 8.5pt; }
-.paper table.doc-sign th, .paper table.doc-sign td { border: 0.5pt solid #7f7f7f; padding: 1.4mm 2mm; vertical-align: top; text-align: left; }
-.paper table.doc-sign th { background: #e7ecf5; text-align: center; }
-.paper table.doc-sign .b { font-weight: 700; }
-.paper .doc-sign .spec { display: block; font-size: 8pt; color: #333; }
+.paper table.doc-sign th, .paper table.doc-sign td { border: 0.5pt solid var(--pab-grid, #7f7f7f); padding: 1.4mm 2mm; vertical-align: top; text-align: left; }
+.paper table.doc-sign th { background: var(--pab-head-fill, #e7ecf5); text-align: center; }
+.paper .doc-sign .b { font-weight: 700; }
+.paper .doc-sign .spec { display: block; font-size: 8pt; color: var(--pab-muted, #595959); }
 .paper table.doc-sign .c { text-align: center; }
 .paper .sign-cell { height: 11mm; }
 .paper .doc-foot { margin-top: 12mm; text-align: right; font-size: 9pt; }
 .paper .doc-foot .b { font-weight: 700; font-size: 9.5pt; }
-.paper .doc-foot .small { font-size: 8pt; color: #595959; }
+.paper .doc-foot .small { font-size: 8pt; color: var(--pab-muted, #595959); }
 .paper .doc-foot .i { font-style: italic; }
 .paper .doc-toc { margin: 0 0 6mm; }
-.paper .doc-toc-title { font-family: Arial, sans-serif; font-size: 14pt; margin: 0 0 5mm; }
+.paper .doc-toc-title { font-family: var(--pab-head, Arial, sans-serif); font-size: var(--pab-h1-size, 14pt); margin: 0 0 5mm; }
 .paper .doc-toc ol { list-style: none; padding: 0; margin: 0; font-size: 10.5pt; }
 .paper .doc-toc li { margin: 0 0 1.4mm; }
-.paper .doc-toc li.lvl2 { margin-left: 6mm; font-size: 10pt; color: #333; }
-.paper .doc-toc a { color: #111; text-decoration: none; }
-.paper .doc-h1 { font-family: Arial, sans-serif; font-size: 14pt; color: #1f3864; margin: 7mm 0 3mm; padding-bottom: 1mm; border-bottom: 0.5pt solid #d9d9d9; }
-.paper .doc-h2 { font-family: Arial, sans-serif; font-size: 11.5pt; color: #2f5496; margin: 5mm 0 2mm; }
+.paper .doc-toc li.lvl2 { margin-left: 6mm; font-size: 10pt; color: var(--pab-muted, #595959); }
+.paper .doc-toc a { color: var(--pab-ink, #111); text-decoration: none; }
+.paper .doc-h1 { font-family: var(--pab-head, Arial, sans-serif); font-size: var(--pab-h1-size, 14pt); color: var(--pab-h1, #1f3864); margin: 7mm 0 3mm; padding-bottom: 1mm; border-bottom: var(--pab-h1-rule, 0.5pt) solid var(--pab-soft-rule, #d9d9d9); }
+.paper .doc-h2 { font-family: var(--pab-head, Arial, sans-serif); font-size: var(--pab-h2-size, 11.5pt); color: var(--pab-h2, #2f5496); margin: 5mm 0 2mm; }
 .paper p { margin: 0 0 2.6mm; text-align: justify; }
 .paper ul, .paper ol { margin: 0 0 3mm; padding-left: 6mm; }
 .paper li { margin-bottom: 1mm; text-align: justify; }
 .paper .doc-table-wrap { margin: 2mm 0 4mm; }
 .paper .doc-table { width: 100%; border-collapse: collapse; font-size: 8.5pt; }
-.paper .doc-table th, .paper .doc-table td { border: 0.5pt solid #8c8c8c; padding: 1.3mm 1.6mm; vertical-align: top; }
-.paper .doc-table th { background: #e7ecf5; font-weight: 700; text-align: center; }
-.paper .doc-caption { font-family: Arial, sans-serif; font-size: 9pt; font-weight: 700; color: #404040; margin: 3mm 0 1mm; }
-.paper .doc-note { border: 0.5pt solid #c9c9c9; background: #f7f7f7; padding: 2.4mm 3mm; font-size: 9pt; font-style: italic; color: #333; margin: 3mm 0 4mm; text-align: justify; }
-.paper .doc-signblock { margin: 6mm 0 4mm; text-align: right; font-family: Arial, sans-serif; font-size: 10pt; line-height: 1.6; }
-.paper .doc-pagebreak { height: 0; border-top: 1px dashed #d0d0d0; margin: 6mm 0; }
-.paper .doc-body { font-family: "Times New Roman", Times, serif; font-size: 11pt; line-height: 1.35; }
+.paper .doc-table th, .paper .doc-table td { border: 0.5pt solid var(--pab-grid, #8c8c8c); padding: 1.3mm 1.6mm; vertical-align: top; }
+.paper .doc-table th { background: var(--pab-head-fill, #e7ecf5); font-weight: 700; text-align: center; }
+.paper .doc-caption { font-family: var(--pab-head, Arial, sans-serif); font-size: 9pt; font-weight: 700; color: var(--pab-meta, #404040); margin: 3mm 0 1mm; }
+.paper .doc-note { border: 0.5pt solid var(--pab-note-rule, #c9c9c9); background: var(--pab-note-fill, #f7f7f7); padding: 2.4mm 3mm; font-size: 9pt; font-style: italic; color: var(--pab-ink, #333); margin: 3mm 0 4mm; text-align: justify; }
+.paper .doc-signblock { margin: 6mm 0 4mm; text-align: right; font-family: var(--pab-head, Arial, sans-serif); font-size: 10pt; line-height: 1.6; }
+.paper .doc-pagebreak { height: 0; border-top: 1px dashed var(--pab-rule, #d0d0d0); margin: 6mm 0; }
+.paper .doc-body { font-family: var(--pab-body, "Times New Roman", Times, serif); font-size: var(--pab-size, 11pt); line-height: var(--pab-leading, 1.35); }
 
 /* --- nakładki ------------------------------------------------------------ */
 
