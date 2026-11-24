@@ -1,8 +1,12 @@
 /* ==========================================================================
    PAB cyfrowa – wersja Google Sites
-   payment.js – dostęp do płatnych plików PDF / DOCX (per dokument).
+   payment.js – WYŁĄCZONY. Archiwum dawnego dostępu do płatnych plików.
 
-   CENNIK (netto, zł):
+   Płatności są zdeaktywowane: index.html nie ładuje tego pliku, a eksport
+   PDF i DOCX w zakładce Podgląd działa bez opłat. Plik pozostaje tylko jako
+   historyczna dokumentacja cennika i nie jest używany przez aplikację.
+
+   DAWNY CENNIK (netto, zł):
      PDF + DOCX  40 zł
      sam PDF     20 zł
      sam DOCX    25 zł

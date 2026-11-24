@@ -1320,19 +1320,14 @@ window.PAB_FIELDS = {
    "Dokumenty i pliki do wniosku"
   ],
   [
-   "preview",
-   "Podgląd",
-   "Sprawdź treść przed eksportem"
-  ],
-  [
-   "export",
-   "Eksport",
-   "DOCX i PDF – płatne za dokument"
-  ],
-  [
    "check",
    "Kontrola",
    "Kompletność i zgodność danych"
+  ],
+  [
+   "preview",
+   "Podgląd",
+   "Sprawdź treść dokumentów"
   ]
  ]
 };

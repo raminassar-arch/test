@@ -29,10 +29,10 @@ Hosting: GitHub Pages, gałąź `main`, katalog główny (`/`).
 | DOCX | `js\docx.js`, `js\zip.js` | zapis OOXML i archiwum ZIP w czystym JavaScripcie |
 | Motywy | `js\theme.js` | pięć wyglądów dokumentów, znak wodny, aliasy dawnych nazw |
 | Podgląd i wydruk | `js\render.js` | podgląd HTML oraz samodzielny dokument A4 do druku / PDF |
-| Płatności | `js\payment.js` | dostęp do PDF/DOCX per dokument; linki do uzupełnienia |
+| Eksport | `js\app.js`, `js\docx.js`, `js\render.js` | PDF i DOCX bez płatności, także dla kompletu dokumentacji |
 | Konta | `accounts.json` | edytowalna lista użytkowników |
 | Ekran startowy | `js\auth.js` | logowanie przed uruchomieniem aplikacji |
-| Interfejs | `js\app.js`, `app.css`, `index.html` | routing, formularze, eksport, kontrola |
+| Interfejs | `js\app.js`, `app.css`, `index.html` | routing, formularze, podgląd, eksport i kontrola |
 
 Kluczowa decyzja: **teksty prawne nie są przepisane na JavaScript**. `content.py`
 (ok. 2,4 tys. linii) jest kopiowany do `engine\` i wykonywany w przeglądarce,
@@ -84,7 +84,9 @@ hasło: min. 4 znaki.
   do zamknięcia karty (`sessionStorage`).
 * **Panel konta** (`#/konto`, przycisk „Panel konta" w pasku nagłówka) pozwala
   zarządzać projektami i ustawieniami konta. Nazwa zalogowanej osoby jest
-  widoczna w pasku nagłówka.
+  widoczna w pasku nagłówka. Usunięcie konta lokalnego najpierw pyta, czy pobrać
+  kopię projektów do pliku ZIP, a potem wymaga drugiego, wyraźnego
+  potwierdzenia.
 * **Do 10 projektów na konto**: nowy, otwieranie, zmiana nazwy, duplikowanie
   i usuwanie (z licznikiem `x / 10`). Dane każdego projektu leżą pod kluczem
   `pab.sites.project.v1|<login>|<id>`, a spis projektów pod
@@ -108,7 +110,7 @@ hasło: min. 4 znaki.
   i nie widzi kont utworzonych na innych urządzeniach.
 * Przycisk **„Wyloguj"** w prawym górnym rogu paska nagłówka czyści oba zapisy
   i przeładowuje stronę na ekran logowania.
-* Dostęp do płatnych plików (`pab.sites.paid.v1`) jest niezależny od logowania.
+* Eksport PDF i DOCX jest dostępny bez płatności w zakładce **Podgląd**.
 
 > **Ważne:** w aplikacji statycznej login i hasło są widoczne w źródle strony
 > i w pliku `accounts.json`. Ekran logowania chroni przed przypadkowym wejściem
@@ -162,7 +164,6 @@ js\fields.js
 js\zip.js
 js\docx.js
 js\render.js
-js\payment.js
 js\boot.js
 js\app.js
 ```
@@ -194,8 +195,8 @@ Po wstawieniu rozciągnij blok na całą szerokość i ustaw wysokość ok. 900�
 
 ### Ograniczenia osadzenia
 
-* **Pamięć przeglądarki.** Projekt i stan dostępu do płatnych plików są zapisywane
-  w `localStorage`. W części przeglądarek (Safari, tryb prywatny) pamięć jest
+* **Pamięć przeglądarki.** Projekt i ustawienia są zapisywane w `localStorage`.
+  W części przeglądarek (Safari, tryb prywatny) pamięć jest
   blokowana dla stron osadzonych w obcej domenie – program działa, ale dane nie
   zapisują się między odświeżeniami.
 * **Zalecenie:** w Google Sites umieść przede wszystkim odnośnik
@@ -221,9 +222,10 @@ Skrypt:
 * wypisuje liczbę pól, grup i wersję.
 
 Następnie **podnieś numer wersji w odnośnikach `?v=`** w `index.html`
-(`app.css?v=1.6.0`, `js\app.js?v=1.6.0`, …). Bez tego przeglądarki użytkowników
-mogą trzymać stare pliki z pamięci podręcznej. Wersja `1.6.0` oznacza wersję
-statyczną z płatnościami za dokumenty (bez licencji i bez TXT).
+(`app.css?v=1.9.18`, `js\app.js?v=1.9.18`, …). Bez tego przeglądarki użytkowników
+mogą trzymać stare pliki z pamięci podręcznej. Wersja `1.9.18` oznacza wersję
+statyczną bez płatności, z eksportem PDF/DOCX bezpośrednio w *Podglądzie*
+(bez licencji i bez TXT).
 
 ---
 
@@ -251,36 +253,27 @@ porównania w przeglądarce – nie jest potrzebny do działania aplikacji.
 
 ---
 
-## Płatności za dokumenty
+## Płatności – wyłączone
 
-Wersja statyczna (GitHub Pages / Google Sites) **nie ma licencji ani okresu
-próbnego**. Zamiast tego każdy dokument jest płatny osobno:
-
-| Wariant | Cena |
-| --- | --- |
-| PDF + DOCX tego samego dokumentu | **40 zł** |
-| sam PDF | **20 zł** |
-| sam DOCX | **25 zł** |
+Wersja statyczna (GitHub Pages / Google Sites) **nie pobiera opłat**. Pliki
+PDF i DOCX są dostępne od razu w zakładce **Podgląd** – zarówno dla pojedynczego
+dokumentu, jak i dla całego kompletu. Dawny plik `js\payment.js` pozostaje w
+repozytorium wyłącznie jako archiwum i nie jest już ładowany przez `index.html`.
+Klucz `pab.sites.paid.v1` nie jest używany.
 
 Wersja desktopowa (`dist\PAB-cyfrowa.exe`) i wersja web (`web\`) zachowują
 dotychczasową licencję kluczami `PAB-…` – zmiany nie dotyczą tych wersji.
 
-### Konfiguracja linków płatności
-
-W `js\payment.js` znajdują się trzy **placeholdery** w obiekcie `LINKS`
-(klucze `bundle`, `pdf`, `docx`). Przed udostępnieniem trzeba podmienić je na
-prawdziwe adresy (PayU, Przelewy24, PayPal.me, BLIK itp.). Obsługiwane tokeny:
-`{kind}` (identyfikator dokumentu, np. `PZT`) i `{amount}` (kwota).
-
-Aplikacja jest w pełni statyczna, więc nie weryfikuje przelewu sama. Po powrocie
-ze strony płatności użytkownik klika **„Opłacone – odblokuj pliki”**, co zapisuje
-dostęp w `localStorage` tej przeglądarki (`pab.sites.paid.v1`). Jest to rozwiązanie
-zaufaniowe – do rzeczywistej weryfikacji potrzebny byłby backend lub callback
-dostawcy płatności. Wyczyszczenie danych witryny usuwa dostęp.
-
 ---
 
 ## Eksport
+
+Widok *Eksport* jest tymczasowo ukryty – kliknięcie starego odnośnika
+`#/eksport` przekierowuje do *Podglądu*. W *Podglądzie* znajdują się przyciski
+**PDF** i **Word (DOCX)**; działają dla pojedynczego dokumentu oraz dla opcji
+**Komplet dokumentacji** (jeden plik DOCX ze wszystkimi dokumentami, jeden PDF
+z całego kompletu). Numeracja „Strona X z Y” jest na każdej stronie, także na
+okładce.
 
 | Format | Sposób | Uwagi |
 | --- | --- | --- |
@@ -293,17 +286,18 @@ plików: `PZT_2026.11.18.docx` itd. – identyczne z wersją desktopową.
 
 ### Motywy dokumentów
 
-W widoku *Eksport* oraz w *Podglądzie* dostępny jest wybór **Motyw nr 1** …
-**Motyw nr 5**. Ustawienie jest zapisywane w projekcie jako `meta.motyw` (klucze
+W widoku *Podgląd* dostępny jest wybór **Motyw nr 1** … **Motyw nr 5**
+(kolejność zakładek: *Kontrola*, potem *Podgląd*). Ustawienie jest zapisywane
+w projekcie jako `meta.motyw` (klucze
 `motyw-1` … `motyw-5`) i dotyczy wyłącznie wyglądu plików DOCX/PDF: fontów,
 kolorów nagłówków, tabel, linii i znaku wodnego. Domyślny jest *Motyw nr 1*
 (granat, układ urzędowy); pozostałe to zieleń, głęboka zieleń ze złotem,
 bordo i turkus. Dawne nazwy `klasyczny`, `nowoczesny`, `bardzo-nowoczesny`
 są rozpoznawane jako aliasy, dzięki czemu starsze projekty nie tracą wyglądu.
-Każdy DOCX (nagłówek VML) i każda strona wydruku/PDF zawierają znak wodny
-**„BIM ARCHITECTS & CONSULTANTS WERSJA TESTOWA”**. Zmiana motywu nie zmienia
-treści dokumentów – `sites\parity_hash.py` nadal potwierdza identyczne akapity.
-Statyczna wersja używa cache-bustingu `?v=1.9.12`.
+Każdy DOCX (nagłówek VML) i każda strona wydruku/PDF zawierają dwulinijkowy znak
+wodny **„BIM ARCHITECTS & CONSULTANTS / WERSJA TESTOWA”**. Zmiana motywu nie
+zmienia treści dokumentów – `sites\parity_hash.py` nadal potwierdza identyczne
+akapity. Statyczna wersja używa cache-bustingu `?v=1.9.18`.
 
 ---
 
@@ -326,12 +320,11 @@ sites\
     zip.js          CRC32 i zapis ZIP (metoda „store”)
     docx.js         zapis OOXML (stylizacja jak w exporters.py)
     theme.js        motywy nr 1–5, znak wodny i aliasy
-    render.js       podgląd HTML i dokument do druku
-    payment.js      płatności za dokumenty (linki + dostęp w localStorage)
+    render.js       podgląd HTML, komplet i dokument do druku
     boot.js         Pyodide + mostek do content.py/exporters.py
     auth.js         logowanie, rejestracja kont i zapis sesji w przeglądarce
     register.js     uruchomienie osobnej strony rejestracja.html
-    app.js          interfejs: routing, formularze, eksport, płatności
+    app.js          interfejs: routing, formularze, podgląd i eksport bez płatności
   build_site.py     regeneracja fields.js i kopii silnika
   parity_check.py   porównanie DOCX z wersją desktopową
   parity_dump.py    zrzut wzorca desktopowego do JSON

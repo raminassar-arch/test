@@ -147,7 +147,7 @@ DOKUMENTY_POZWOLENIE = [
     ("oswiadczenie", "Oświadczenie o prawie do dysponowania nieruchomością na cele budowlane"),
     ("projekt", "Projekt budowlany (PZT, PAB i część rysunkowa)"),
     ("bioz_info", "Informacja dotycząca bezpieczeństwa i ochrony zdrowia"),
-    ("bioz_plan", "Plan bezpieczeństwa i ochrony zdrowia (jeżeli wymagany)"),
+    ("bioz_plan", "Plan BIOZ (dokument budowy, nie załącznik do wniosku)"),
     ("mapa", "Mapa do celów projektowych"),
     ("plan", "Wypis i wyrys z MPZP albo decyzja o warunkach zabudowy"),
     ("warunki", "Warunki techniczne przyłączenia do sieci uzbrojenia terenu"),
@@ -448,8 +448,12 @@ def blank_project() -> dict[str, Any]:
             "uwagi": "",
         },
         "dokumenty": [
-            {"klucz": klucz, "nazwa": nazwa, "wymagany": True,
-             "status": "Do uzupełnienia", "uwagi": ""}
+            {"klucz": klucz, "nazwa": nazwa,
+             "wymagany": klucz != "bioz_plan",
+             "status": "Do uzupełnienia",
+             "uwagi": ("Wymagany tylko w przypadkach z art. 21a ust. 1a Prawa budowlanego; "
+                       "sporządza go kierownik budowy przed rozpoczęciem robót."
+                       if klucz == "bioz_plan" else "")}
             for klucz, nazwa in DOKUMENTY_POZWOLENIE
         ],
         "zalaczniki": [],
@@ -668,7 +672,9 @@ def demo_project() -> dict[str, Any]:
         {"klucz": "oswiadczenie", "status": "Dołączony"},
         {"klucz": "projekt", "status": "Dołączony"},
         {"klucz": "bioz_info", "status": "Dołączony"},
-        {"klucz": "bioz_plan", "status": "Dołączony"},
+        {"klucz": "bioz_plan", "status": "Do uzupełnienia",
+         "uwagi": "Wymagany przed rozpoczęciem robót (art. 21a Prawa budowlanego); "
+                  "nie jest załącznikiem do wniosku o pozwolenie na budowę."},
         {"klucz": "mapa", "status": "Dołączony"},
         {"klucz": "plan", "status": "Dołączony"},
         {"klucz": "warunki", "status": "Dołączony"},
@@ -2243,12 +2249,17 @@ def build_bioz_info(data: dict) -> Doc:
         B.append(h2("Uwagi"))
         B.append(p(s(data, "bioz", "uwagi")))
     B.append(note(
-        "Informację opracowuje projektant. Jeżeli zakres robót obejmuje prace "
-        "szczególnie niebezpieczne, kierownik budowy sporządza plan BIOZ na podstawie "
-        "niniejszej informacji, zgodnie z art. 21a ustawy – Prawo budowlane oraz "
-        "rozporządzeniem Ministra Infrastruktury z dnia 23 czerwca 2003 r. w sprawie "
-        "informacji dotyczącej bezpieczeństwa i ochrony zdrowia oraz planu bezpieczeństwa "
-        "i ochrony zdrowia (Dz. U. Nr 120, poz. 1126)."
+        "Informację opracowuje projektant; jest ona elementem projektu budowlanego "
+        "i podstawą sporządzenia planu BIOZ przez kierownika budowy (art. 20 ust. 1 "
+        "pkt 1b Prawa budowlanego oraz § 5 ust. 1 pkt 1 lit. c rozporządzenia "
+        "w sprawie szczegółowego zakresu i formy projektu budowlanego). Podstawa "
+        "prawna: art. 20 ust. 1 pkt 1b ustawy z dnia 7 lipca 1994 r. – Prawo budowlane "
+        "(Dz.U. z 2026 r. poz. 524, z późn. zm.), rozporządzenie Ministra Rozwoju z dnia "
+        "11 września 2020 r. w sprawie szczegółowego zakresu i formy projektu budowlanego "
+        "(Dz.U. z 2022 r. poz. 1679, z późn. zm.) oraz rozporządzenie Ministra "
+        "Infrastruktury z dnia 23 czerwca 2003 r. w sprawie informacji dotyczącej "
+        "bezpieczeństwa i ochrony zdrowia oraz planu bezpieczeństwa i ochrony zdrowia "
+        "(Dz.U. nr 120, poz. 1126)."
     ))
     return doc
 
@@ -2303,11 +2314,18 @@ def build_bioz(data: dict) -> Doc:
         B.append(h1("8. Uwagi"))
         B.append(p(s(data, "bioz", "uwagi")))
     B.append(note(
-        "Plan BIOZ sporządza kierownik budowy przed rozpoczęciem robót. Plan należy "
-        "aktualizować przed rozpoczęciem prac szczególnie niebezpiecznych oraz w razie "
-        "zmiany sposobu prowadzenia robót. Podstawa prawna: art. 21a ustawy – Prawo "
-        "budowlane oraz rozporządzenie Ministra Infrastruktury z dnia 23 czerwca 2003 r. "
-        "(Dz. U. Nr 120, poz. 1126)."
+        "Plan BIOZ sporządza kierownik budowy przed rozpoczęciem robót, w oparciu "
+        "o informację projektanta (art. 20 ust. 1 pkt 1b i art. 21a ust. 1 Prawa "
+        "budowlanego). Plan wymaga się, gdy występują roboty wymienione w art. 21a "
+        "ust. 2 ustawy albo gdy roboty potrwają dłużej niż 30 dni roboczych i jednocześnie "
+        "będzie przy nich zatrudnionych co najmniej 20 pracowników lub pracochłonność "
+        "przekroczy 500 osobodni (art. 21a ust. 1a). Plan aktualizuje się przed pracami "
+        "szczególnie niebezpiecznymi i przy zmianie sposobu prowadzenia robót. Jest to "
+        "dokument budowy, nie załącznik do wniosku o pozwolenie na budowę. Podstawa "
+        "prawna: art. 21a ustawy z dnia 7 lipca 1994 r. – Prawo budowlane (Dz.U. z 2026 r. "
+        "poz. 524, z późn. zm.) oraz rozporządzenie Ministra Infrastruktury z dnia "
+        "23 czerwca 2003 r. w sprawie informacji dotyczącej bezpieczeństwa i ochrony "
+        "zdrowia oraz planu bezpieczeństwa i ochrony zdrowia (Dz.U. nr 120, poz. 1126)."
     ))
     B.append(sign("……………………………………", "podpis kierownika budowy"))
     return doc

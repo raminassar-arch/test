@@ -13,7 +13,8 @@
   "use strict";
 
   const DEFAULT = "motyw-1";
-  const WATERMARK = "BIM ARCHITECTS & CONSULTANTS WERSJA TESTOWA";
+  const WATERMARK_LINES = ["BIM ARCHITECTS & CONSULTANTS", "WERSJA TESTOWA"];
+  const WATERMARK = WATERMARK_LINES.join("\n");
 
   // Aliasy zachowane dla starszych projektów i nazw z zamówienia.
   const ALIASES = {
@@ -268,6 +269,7 @@
   window.PABTheme = {
     DEFAULT: DEFAULT,
     WATERMARK: WATERMARK,
+    WATERMARK_LINES: WATERMARK_LINES,
     THEMES: THEMES,
     keys: Object.keys(THEMES),
     resolve: resolve,

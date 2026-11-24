@@ -207,7 +207,7 @@
     const rendered = blocks(doc.blocks);
     let html =
       '<div class="doc-watermark" aria-hidden="true">' +
-      esc(window.PABTheme.WATERMARK) +
+      window.PABTheme.WATERMARK_LINES.map(esc).join("<br>") +
       "</div>";
     if (showCover) html += cover(doc);
     if (showToc) html += toc(rendered.headings);
@@ -224,11 +224,15 @@
       ? (t.docx.h1RuleSize / 8) + "pt solid var(--pab-soft-rule)"
       : "none";
     return window.PABTheme.cssVars(t.key, "body") + [
-      "@page{size:A4;margin:25mm 20mm 22mm 25mm}",
+      "@page{size:A4;margin:25mm 20mm 22mm 25mm;" +
+        '@bottom-center{content:"Strona " counter(page) " z " counter(pages);' +
+        "font-family:'" + t.headFont + "';font-size:8pt;color:" + t.muted + "}}",
       "html,body{margin:0;padding:0}",
       "body{font-family:var(--pab-body);font-size:var(--pab-size);line-height:var(--pab-leading);color:var(--pab-ink)}",
-      ".doc-watermark{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%) rotate(-32deg);font-family:var(--pab-head);font-size:30pt;font-weight:700;color:var(--pab-watermark);opacity:0.11;white-space:nowrap;pointer-events:none;z-index:0}",
-      ".doc-cover,.doc-toc,.doc-body{position:relative;z-index:1}",
+      ".doc-watermark{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%) rotate(-32deg);font-family:var(--pab-head);font-size:26pt;font-weight:700;line-height:1.15;text-align:center;color:var(--pab-watermark);opacity:0.11;white-space:nowrap;pointer-events:none;z-index:0}",
+      ".doc-cover,.doc-toc,.doc-body,.doc-collection-item{position:relative;z-index:1}",
+      ".doc-collection-next{page-break-before:always;break-before:page}",
+      ".doc-collection-title{text-align:center;font-family:var(--pab-head);font-size:16pt;color:var(--pab-h1);margin:0 0 8mm;padding-bottom:3mm;border-bottom:" + coverRule + "}",
       ".doc-cover{page-break-after:always}",
       ".doc-toc{page-break-after:always}",
       ".doc-part{text-align:center;font-family:var(--pab-head);font-size:10pt;font-weight:bold;color:var(--pab-faint);margin-top:8mm}",
@@ -268,6 +272,23 @@
   }
 
   /** Pełny, samodzielny dokument HTML do wydruku / zapisu jako PDF. */
+  /** Podgląd kompletu dokumentacji – jeden znak wodny, wszystkie dokumenty naraz. */
+  function collection(items) {
+    let html =
+      '<div class="doc-watermark" aria-hidden="true">' +
+      window.PABTheme.WATERMARK_LINES.map(esc).join("<br>") +
+      "</div>";
+    (items || []).forEach(function (item, index) {
+      const doc = item.doc || item;
+      const label = item.label || doc.kind || "Dokument";
+      html +=
+        '<section class="doc-collection-item' + (index ? " doc-collection-next" : "") + '">' +
+        '<h1 class="doc-collection-title">' + esc(label) + "</h1>" +
+        '<div class="doc-body">' + blocks(doc.blocks).html + "</div></section>";
+    });
+    return html;
+  }
+
   function printable(doc, meta, theme) {
     meta = meta || {};
     const chosen = theme === undefined || theme === null ? meta.motyw : theme;
@@ -281,5 +302,27 @@
     );
   }
 
-  window.PABRender = { document: document, printable: printable, blocks: blocks, esc: esc };
+  /** Wersja do druku kompletu dokumentacji (PDF z okna druku przeglądarki). */
+  function printableCollection(items, meta, theme) {
+    meta = meta || {};
+    const first = (items && items[0] && (items[0].doc || items[0])) || {};
+    const chosen = theme === undefined || theme === null ? meta.motyw : theme;
+    const t = window.PABTheme.use(first, chosen);
+    const title = "Komplet dokumentacji" + (meta.nazwa ? " – " + meta.nazwa : "");
+    return (
+      "<!doctype html><html lang=\"pl\"><head><meta charset=\"utf-8\">" +
+      "<title>" + esc(title) + "</title>" +
+      "<style>" + printCss(t) + "</style>" +
+      "</head><body>" + collection(items) + "</body></html>"
+    );
+  }
+
+  window.PABRender = {
+    document: document,
+    collection: collection,
+    printable: printable,
+    printableCollection: printableCollection,
+    blocks: blocks,
+    esc: esc,
+  };
 })();

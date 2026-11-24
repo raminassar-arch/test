@@ -41,7 +41,9 @@ except ImportError:  # uruchomienie z katalogu src
 
 PROGRAM_NAME = "PAB cyfrowa"
 
-WATERMARK_TEXT = "BIM ARCHITECTS & CONSULTANTS WERSJA TESTOWA"
+#: Znak wodny w dwóch wierszach (w DOCX rozdzielony ``&#13;`` w VML).
+WATERMARK_LINES = ("BIM ARCHITECTS & CONSULTANTS", "WERSJA TESTOWA")
+WATERMARK_TEXT = "\n".join(WATERMARK_LINES)
 
 # Motyw nr 1 odtwarza dotychczasowy wygląd dokumentów – wartości poniżej są
 # celowo identyczne ze stałymi używanymi przed dodaniem motywów. Każdy kolejny
@@ -471,7 +473,7 @@ def _docx_watermark(section) -> None:
 
     color = T("watermark_color")
     font = escape(T("head_font"), {'"': "&quot;"})
-    text = escape(WATERMARK_TEXT, {'"': "&quot;"})
+    text = "&#13;".join(escape(line, {'"': "&quot;"}) for line in WATERMARK_LINES)
     pict_xml = (
         '<w:pict xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" '
         'xmlns:v="urn:schemas-microsoft-com:vml" '
@@ -496,7 +498,7 @@ def _docx_watermark(section) -> None:
         '</v:shapetype>'
         '<v:shape id="PowerPlusWaterMarkObject" o:spid="_x0000_s2049" '
         'type="#_x0000_t136" '
-        'style="position:absolute;margin-left:0;margin-top:0;width:468pt;height:117pt;'
+        'style="position:absolute;margin-left:0;margin-top:0;width:468pt;height:170pt;'
         'rotation:315;z-index:-251658752;mso-position-horizontal:center;'
         'mso-position-horizontal-relative:margin;mso-position-vertical:center;'
         'mso-position-vertical-relative:margin" '
@@ -574,9 +576,28 @@ def _docx_setup(doc) -> None:
         settings.append(update)
 
 
+def _docx_page_number_footer(footer) -> None:
+    """Stopka „Strona X z Y” – identyczna na okładce i na pozostałych stronach."""
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+    from docx.shared import Pt, RGBColor
+
+    par = footer.paragraphs[0]
+    par.text = ""
+    par.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    par.paragraph_format.space_before = Pt(0)
+    par.paragraph_format.space_after = Pt(0)
+    par.add_run("Strona ")
+    _docx_field(par, "PAGE", "1")
+    par.add_run(" z ")
+    _docx_field(par, "NUMPAGES", "1")
+    for run in par.runs:
+        run.font.size = Pt(8)
+        run.font.name = T("head_font")
+        run.font.color.rgb = RGBColor.from_string(T("muted_color"))
+
+
 def _docx_header_footer(doc, doc_title: str, short_name: str) -> None:
     from docx.enum.text import WD_ALIGN_PARAGRAPH
-    from docx.oxml.ns import qn
     from docx.shared import Pt, RGBColor
 
     section = doc.sections[0]
@@ -593,25 +614,10 @@ def _docx_header_footer(doc, doc_title: str, short_name: str) -> None:
     par.paragraph_format.space_after = Pt(0)
     _docx_paragraph_border_bottom(par, T("rule_color"), 4)
 
-    footer = section.footer
-    par = footer.paragraphs[0]
-    par.text = ""
-    par.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    par.paragraph_format.space_before = Pt(0)
-    run = par.add_run("Strona ")
-    run.font.size = Pt(8)
-    run.font.name = T("head_font")
-    run.font.color.rgb = RGBColor.from_string(T("muted_color"))
-    _docx_field(par, "PAGE", "1")
-    run = par.add_run(" z ")
-    run.font.size = Pt(8)
-    run.font.name = T("head_font")
-    run.font.color.rgb = RGBColor.from_string(T("muted_color"))
-    _docx_field(par, "NUMPAGES", "1")
-    for r in par.runs:
-        r.font.size = Pt(8)
-        r.font.name = T("head_font")
-        r.font.color.rgb = RGBColor.from_string(T("muted_color"))
+    first_footer = section.first_page_footer
+    first_footer.is_linked_to_previous = False
+    _docx_page_number_footer(section.footer)
+    _docx_page_number_footer(first_footer)
 
 
 def _docx_title_page(doc, doc_obj) -> None:
@@ -1160,7 +1166,8 @@ class _PdfBuilder:
 
     # -- strony ---------------------------------------------------------
     def _watermark(self, canvas):
-        """Znak wodny „BIM ARCHITECTS & CONSULTANTS WERSJA TESTOWA”."""
+        """Znak wodny w dwóch wierszach („BIM ARCHITECTS & CONSULTANTS” /
+        „WERSJA TESTOWA”)."""
         from reportlab.lib import colors
 
         canvas.saveState()
@@ -1171,8 +1178,9 @@ class _PdfBuilder:
             pass
         canvas.translate(self.page_w / 2, self.page_h / 2)
         canvas.rotate(32)
-        canvas.setFont(self.font_bold, 26)
-        canvas.drawCentredString(0, -8, WATERMARK_TEXT)
+        canvas.setFont(self.font_bold, 22)
+        canvas.drawCentredString(0, 10, WATERMARK_LINES[0])
+        canvas.drawCentredString(0, -18, WATERMARK_LINES[1])
         canvas.restoreState()
 
     def _on_cover(self, canvas, doc):
@@ -1496,13 +1504,12 @@ def _footer_canvas(footer_text: str, font_name: str, color: str = "595959"):
             total = len(self._saved)
             for state in self._saved:
                 self.__dict__.update(state)
-                if self._pageNumber > 1:
-                    self.saveState()
-                    self.setFont(font_name, 8)
-                    self.setFillColor(colors.HexColor("#" + color))
-                    self.drawCentredString(self._pagesize[0] / 2, 11 * mm,
-                                           f"Strona {self._pageNumber} z {total}")
-                    self.restoreState()
+                self.saveState()
+                self.setFont(font_name, 8)
+                self.setFillColor(colors.HexColor("#" + color))
+                self.drawCentredString(self._pagesize[0] / 2, 11 * mm,
+                                       f"Strona {self._pageNumber} z {total}")
+                self.restoreState()
                 super().showPage()
             super().save()
 

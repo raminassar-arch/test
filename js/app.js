@@ -1,6 +1,6 @@
 /* ==========================================================================
    PAB cyfrowa – wersja Google Sites
-   app.js – interfejs: routing, formularze, podgląd, eksport, płatności.
+   app.js – interfejs: routing, formularze, podgląd i eksport (bez płatności).
    Wszystkie dane projektu są przechowywane lokalnie w przeglądarce
    (localStorage). Nic nie jest wysyłane na serwer.
    ========================================================================== */
@@ -137,6 +137,51 @@
     } catch (err) { /* brak dostępu do pamięci */ }
   }
 
+  function safeFileName(value) {
+    return String(value || "projekt").replace(/[\\/:*?"<>|]+/g, "_").slice(0, 60);
+  }
+
+  /** Pobiera wszystkie projekty konta jako jeden plik ZIP z plikami JSON. */
+  function downloadProjects(login) {
+    const who = login || currentLogin();
+    const idx = readIndex(who);
+    const entries = [];
+    const saved = [];
+    if (idx) {
+      idx.items.forEach(function (item) {
+        let raw = null;
+        try { raw = localStorage.getItem(PROJECT_PREFIX + who + "|" + item.id); }
+        catch (err) { /* brak dostępu do pamięci */ }
+        const name = safeFileName(item.name) + "-" + item.id + ".json";
+        entries.push({ name: name, data: raw || JSON.stringify({}, null, 2) });
+        saved.push({ plik: name, nazwa: item.name, id: item.id,
+                     dataModyfikacji: new Date(item.updated).toISOString() });
+      });
+    } else {
+      let raw = null;
+      try { raw = localStorage.getItem(PROJECT_PREFIX + who) ||
+               localStorage.getItem(LEGACY_PROJECT_KEY + "|" + who); }
+      catch (err) { /* brak dostępu do pamięci */ }
+      if (raw) {
+        entries.push({ name: "Projekt-1.json", data: raw });
+        saved.push({ plik: "Projekt-1.json", nazwa: "Projekt 1", id: "p1" });
+      }
+    }
+    if (!entries.length || !window.PABZip || !window.PABZip.zip) return false;
+    entries.push({
+      name: "SPIS-PROJEKTOW.txt",
+      data: "PAB cyfrowa – kopia projektów konta " + who + "\n" +
+            "Utworzono: " + new Date().toISOString() + "\n\n" +
+            saved.map(function (item) {
+              return item.plik + " – " + item.nazwa + " (" + item.id + ")";
+            }).join("\n") + "\n\n" +
+            "Pliki JSON można wczytać ponownie przez „Import JSON” na stronie startowej.\n"
+    });
+    download(window.PABZip.zip(entries),
+             "PAB-projekty-" + safeFileName(who) + ".zip", "application/zip");
+    return true;
+  }
+
   let activeId = "p1";
   let project = null;
   let engine = { state: "idle", error: "" }; // idle | loading | ready | error
@@ -216,9 +261,8 @@
     if (box && busy === 0) box.classList.remove("show");
   }
 
-  /** Potwierdzenie wewnątrz aplikacji. Natywne confirm() bywa blokowane
-      w osadzonych ramkach (np. Google Sites) i wtedy nic się nie dzieje. */
-  function askConfirm(message, confirmLabel) {
+  /** Własne okno wyboru – natywne confirm() bywa blokowane w ramkach. */
+  function askChoice(message, options) {
     return new Promise(function (resolve) {
       let box = $("#ask");
       if (!box) {
@@ -226,35 +270,51 @@
         box.id = "ask";
         box.innerHTML =
           '<div class="ask-card" role="dialog" aria-modal="true">' +
-          '<p class="ask-msg"></p>' +
-          '<div class="ask-actions">' +
-          '<button type="button" class="btn" data-ask="no">Anuluj</button>' +
-          '<button type="button" class="btn primary" data-ask="yes"></button>' +
-          "</div></div>";
+          '<p class="ask-msg"></p><div class="ask-actions"></div></div>';
         document.body.appendChild(box);
       }
-      if (box.classList.contains("show")) { resolve(false); return; }
+      if (box.classList.contains("show")) { resolve("cancel"); return; }
       $(".ask-msg", box).textContent = message;
-      $('[data-ask="yes"]', box).textContent = confirmLabel || "Potwierdź";
+      const actions = $(".ask-actions", box);
+      actions.innerHTML = "";
+      options.forEach(function (option) {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "btn " + (option.kind || "");
+        button.setAttribute("data-ask", option.value);
+        button.textContent = option.label;
+        actions.appendChild(button);
+      });
       box.classList.add("show");
-      function done(ok) {
+      const cancelValue = options.some(function (o) { return o.value === "cancel"; })
+        ? "cancel" : "no";
+      function done(value) {
         box.classList.remove("show");
         box.removeEventListener("click", onAskClick);
         document.removeEventListener("keydown", onAskKey);
-        resolve(ok);
+        resolve(value);
       }
       function onAskClick(ev) {
-        if (ev.target === box) { done(false); return; }
+        if (ev.target === box) { done(cancelValue); return; }
         const btn = ev.target.closest("[data-ask]");
-        if (btn) done(btn.getAttribute("data-ask") === "yes");
+        if (btn) done(btn.getAttribute("data-ask"));
       }
       function onAskKey(ev) {
-        if (ev.key === "Escape") done(false);
+        if (ev.key === "Escape") done(cancelValue);
       }
       box.addEventListener("click", onAskClick);
       document.addEventListener("keydown", onAskKey);
-      $('[data-ask="no"]', box).focus();
+      const cancelButton = $('[data-ask="' + cancelValue + '"]', box);
+      if (cancelButton) cancelButton.focus();
     });
+  }
+
+  /** Potwierdzenie tak/nie zbudowane na askChoice. */
+  function askConfirm(message, confirmLabel) {
+    return askChoice(message, [
+      { value: "no", label: "Anuluj" },
+      { value: "yes", label: confirmLabel || "Potwierdź", kind: "primary" }
+    ]).then(function (value) { return value === "yes"; });
   }
 
   // --- projekt -------------------------------------------------------------
@@ -658,9 +718,8 @@
       card("bioz", "BIOZ", "Informacja i plan bezpieczeństwa – " + countRows("bioz") + " pól.", "dane/bioz") +
       card("bilans", "Bilans i obiekty", "Powierzchnie, wskaźniki i wykaz obiektów.", "bilans") +
       card("zal", "Załączniki", "Dokumenty i pliki dołączane do wniosku.", "zalaczniki") +
-      card("preview", "Podgląd", "Zobacz gotową treść dokumentu.", "podglad") +
-      card("export", "Eksport", "DOCX i PDF – płatne osobno za każdy dokument.", "eksport") +
       card("check", "Kontrola", "Sprawdź kompletność i spójność danych.", "kontrola") +
+      card("preview", "Podgląd", "Zobacz gotową treść dokumentu.", "podglad") +
       "</section>" +
 
       '<section class="panel">' +
@@ -1008,78 +1067,44 @@
       '<label class="theme-inline"><span>Motyw:</span>' +
       '<select id="theme-select" class="inline" data-bind="meta.motyw">' + themeOptions() + "</select></label>" +
       '<select id="preview-kind" class="inline">' +
+      '<option value="ALL">Komplet dokumentacji</option>' +
       (F.dokumenty || [])
         .map(function (pair) {
           return '<option value="' + pair[0] + '">' + esc(pair[1]) + "</option>";
         })
         .join("") +
       "</select>" +
-      '<button class="btn small" data-act="preview-print">Drukuj / PDF</button>' +
-      '<button class="btn small" data-act="preview-docx">DOCX</button>' +
+      '<button class="btn small" data-act="preview-print" title="Drukuj lub zapisz jako PDF">PDF</button>' +
+      '<button class="btn small" data-act="preview-docx" title="Pobierz edytowalny dokument Word">Word (DOCX)</button>' +
       "</div></div>" +
       '<div id="preview-stage" class="preview-stage"><div class="panel"><p>Wybierz dokument i poczekaj na wczytanie silnika…</p></div></div>'
     );
   }
 
-  function priceCard(title, price, note) {
-    return (
-      '<div class="price-card">' +
-      '<span class="price-name">' + esc(title) + "</span>" +
-      '<strong class="price-value">' + price + " zł</strong>" +
-      '<span class="price-note">' + esc(note || "za dokument") + "</span>" +
-      "</div>"
-    );
-  }
-
-  function accessText(st) {
-    if (st.pdf && st.docx) return "PDF + DOCX opłacone";
-    if (st.pdf) return "opłacony PDF";
-    if (st.docx) return "opłacony DOCX";
-    return "brak dostępu";
-  }
-
   function viewExport() {
-    const P = window.PABPayment.PRICES;
     return (
       '<div class="page-head"><div><h1>Eksport dokumentacji</h1>' +
-      "<p>Płatność jest przypisana do pojedynczego dokumentu. Po opłaceniu pliki pobierzesz od razu w tej przeglądarce.</p></div></div>" +
+      "<p>Eksport jest dostępny bez płatności. Pliki PDF i DOCX generuje ten sam silnik co podgląd.</p></div></div>" +
       themePickerPanel() +
-      '<section class="panel pay-intro">' +
-      '<h2>Cennik – każdy dokument osobno</h2>' +
-      '<div class="price-grid">' +
-      priceCard("PDF + DOCX", P.bundle, "najkorzystniej") +
-      priceCard("Sam PDF", P.pdf, "wydruk A4 do pliku") +
-      priceCard("Sam DOCX", P.docx, "edytowalny w Wordzie") +
-      "</div>" +
-      '<p class="small muted">TXT nie jest dostępny w tej wersji. Projekt możesz zapisać jako JSON na stronie startowej.</p>' +
-      (window.PABPayment.configured()
-        ? ""
-        : '<p class="small err">Linki płatności nie są jeszcze skonfigurowane — do uzupełnienia w <code>js/payment.js</code>.</p>') +
-      "</section>" +
       '<section class="panel">' +
       '<h2>Dokumenty</h2>' +
       '<div class="pay-list">' +
       (F.dokumenty || [])
         .map(function (pair) {
           const kind = pair[0];
-          const st = window.PABPayment.status(kind);
           return (
             '<div class="pay-doc">' +
-            '<div class="pay-doc-head"><strong>' + esc(pair[1]) + "</strong>" +
-            '<span class="pay-state' + ((st.pdf || st.docx) ? " ok" : "") + '">' + accessText(st) + "</span></div>" +
+            '<div class="pay-doc-head"><strong>' + esc(pair[1]) + "</strong></div>" +
             '<div class="pay-doc-actions">' +
-            '<button class="btn small" data-act="dl-docx" data-kind="' + esc(kind) + '"' + (st.docx ? "" : " disabled") + ">DOCX</button>" +
-            '<button class="btn small" data-act="dl-pdf" data-kind="' + esc(kind) + '"' + (st.pdf ? "" : " disabled") + ">PDF</button>" +
-            '<button class="link" data-act="buy" data-kind="' + esc(kind) + '" data-opt="bundle">PDF+DOCX · ' + P.bundle + " zł</button>" +
-            '<button class="link" data-act="buy" data-kind="' + esc(kind) + '" data-opt="pdf">PDF · ' + P.pdf + " zł</button>" +
-            '<button class="link" data-act="buy" data-kind="' + esc(kind) + '" data-opt="docx">DOCX · ' + P.docx + " zł</button>" +
+            '<button class="btn small" data-act="dl-docx" data-kind="' + esc(kind) + '">Word (DOCX)</button>' +
+            '<button class="btn small" data-act="dl-pdf" data-kind="' + esc(kind) + '">PDF</button>' +
             "</div></div>"
           );
         })
         .join("") +
       "</div>" +
       '<p class="small muted">PDF powstaje przez okno druku przeglądarki – wybierz „Zapisz jako PDF”. ' +
-      "Dostęp zapisuje się w tej przeglądarce (localStorage).</p>" +
+      "Numeracja stron jest dodawana także na okładce.</p>" +
       "</section>"
     );
   }
@@ -1102,7 +1127,6 @@
       "<p>" + esc(F.app.tagline) + "</p></div></div>" +
       '<div class="lic-grid">' +
       stat("Wersja", F.app.version) +
-      stat("Wydanie", "Google Sites / przeglądarka") +
       stat("Autor", F.app.author + " " + F.app.year) +
       stat("Firma", F.app.company) +
       stat("Kontakt", F.app.email) +
@@ -1228,6 +1252,11 @@
     if (!project) project = emptyProject();
 
     const parts = route();
+    // Eksport tymczasowo wyłączony – stare odnośniki prowadzą do podglądu.
+    if (parts[0] === "eksport" || parts[0] === "export") {
+      window.location.hash = "#/podglad";
+      return;
+    }
     const head = parts[0];
     const view = $("#view");
     if (!view) return;
@@ -1255,6 +1284,7 @@
 
     if (head === "podglad" || head === "preview") initPreview();
     if (head === "kontrola" || head === "check") runCheck();
+    applyPendingFocus();
   }
 
   function renderSteps(head, sub) {
@@ -1294,6 +1324,21 @@
   // --- podgląd -------------------------------------------------------------
 
   let previewKind = "PZT";
+  const ALL_DOCS = "ALL";
+
+  function updatePreviewActions() {
+    const all = previewKind === ALL_DOCS;
+    const print = document.querySelector('.btn[data-act="preview-print"]');
+    const word = document.querySelector('.btn[data-act="preview-docx"]');
+    if (print) {
+      print.style.display = "";
+      print.setAttribute("title", all ? "Drukuj lub zapisz cały komplet jako PDF" : "Drukuj lub zapisz jako PDF");
+    }
+    if (word) {
+      word.style.display = "";
+      word.setAttribute("title", all ? "Pobierz cały komplet jako jeden plik DOCX" : "Pobierz edytowalny dokument Word");
+    }
+  }
 
   function initPreview() {
     const select = $("#preview-kind");
@@ -1301,10 +1346,23 @@
       select.value = previewKind;
       select.addEventListener("change", function () {
         previewKind = select.value;
+        updatePreviewActions();
         renderPreview();
       });
     }
+    updatePreviewActions();
     renderPreview();
+  }
+
+  function buildAllDocs() {
+    const pairs = F.dokumenty || [];
+    return Promise.all(
+      pairs.map(function (pair) {
+        return window.PABEngine.build(pair[0], project).then(function (doc) {
+          return { label: pair[1], doc: doc };
+        });
+      })
+    );
   }
 
   function renderPreview() {
@@ -1330,6 +1388,20 @@
     }
 
     stage.innerHTML = '<div class="panel"><p>Generuję podgląd…</p></div>';
+    if (previewKind === ALL_DOCS) {
+      const key = themeKey();
+      buildAllDocs()
+        .then(function (items) {
+          items.forEach(function (item) { window.PABTheme.use(item.doc, key); });
+          stage.innerHTML = '<div class="paper" style="' + window.PABTheme.style(key) + '">' +
+            window.PABRender.collection(items) + "</div>";
+        })
+        .catch(function (err) {
+          stage.innerHTML = '<div class="panel"><h2>Nie udało się zbudować dokumentów</h2><p>' +
+            esc(err.message || err) + "</p></div>";
+        });
+      return;
+    }
     window.PABEngine.build(previewKind, project)
       .then(function (doc) {
         const key = themeKey();
@@ -1374,132 +1446,112 @@
       });
   }
 
+  function printHtml(html) {
+    const frame = document.createElement("iframe");
+    frame.setAttribute("aria-hidden", "true");
+    frame.style.position = "fixed";
+    frame.style.right = "0";
+    frame.style.bottom = "0";
+    frame.style.width = "0";
+    frame.style.height = "0";
+    frame.style.border = "0";
+    document.body.appendChild(frame);
+    const cdoc = frame.contentWindow.document;
+    cdoc.open();
+    cdoc.write(html);
+    cdoc.close();
+    const run = function () {
+      try {
+        frame.contentWindow.focus();
+        frame.contentWindow.print();
+      } catch (err) {
+        toast("Przeglądarka zablokowała druk. Otwórz podgląd i użyj Ctrl+P.", "err");
+      }
+      setTimeout(function () {
+        if (frame.parentNode) frame.parentNode.removeChild(frame);
+      }, 60000);
+    };
+    if (cdoc.readyState === "complete") setTimeout(run, 250);
+    else frame.onload = function () { setTimeout(run, 250); };
+  }
+
   function printDoc(kind) {
     return ensureEngine()
       .then(function () {
         return window.PABEngine.build(kind, project);
       })
       .then(function (doc) {
-        const html = window.PABRender.printable(doc, null, themeKey());
-        const frame = document.createElement("iframe");
-        frame.setAttribute("aria-hidden", "true");
-        frame.style.position = "fixed";
-        frame.style.right = "0";
-        frame.style.bottom = "0";
-        frame.style.width = "0";
-        frame.style.height = "0";
-        frame.style.border = "0";
-        document.body.appendChild(frame);
-        const cdoc = frame.contentWindow.document;
-        cdoc.open();
-        cdoc.write(html);
-        cdoc.close();
-        const run = function () {
-          try {
-            frame.contentWindow.focus();
-            frame.contentWindow.print();
-          } catch (err) {
-            toast("Przeglądarka zablokowała druk. Otwórz podgląd i użyj Ctrl+P.", "err");
-          }
-          setTimeout(function () {
-            if (frame.parentNode) frame.parentNode.removeChild(frame);
-          }, 60000);
-        };
-        if (cdoc.readyState === "complete") setTimeout(run, 250);
-        else frame.onload = function () { setTimeout(run, 250); };
+        return printHtml(window.PABRender.printable(doc, null, themeKey()));
       });
   }
 
-  function hasAccess(kind, format) {
-    return window.PABPayment.isUnlocked(kind, format);
+  function printAll() {
+    return ensureEngine()
+      .then(buildAllDocs)
+      .then(function (items) {
+        items.forEach(function (item) { window.PABTheme.use(item.doc, themeKey()); });
+        const meta = {
+          motyw: themeKey(),
+          nazwa: (project.meta && project.meta.nazwa) || "",
+        };
+        return printHtml(window.PABRender.printableCollection(items, meta, themeKey()));
+      });
+  }
+
+  function exportAllDocx() {
+    return ensureEngine()
+      .then(buildAllDocs)
+      .then(function (items) {
+        const blocks = [];
+        items.forEach(function (item, index) {
+          if (index) blocks.push({ t: "pagebreak" });
+          blocks.push({ t: "h1", x: item.label });
+          (item.doc.blocks || []).forEach(function (block) { blocks.push(block); });
+        });
+        const doc = {
+          element: "PAB",
+          kind: "ALL",
+          title: "Komplet dokumentacji",
+          meta: {
+            cover: false,
+            toc: false,
+            motyw: themeKey(),
+            nazwa: (project.meta && project.meta.nazwa) || "",
+          },
+          blocks: blocks,
+        };
+        window.PABTheme.use(doc, themeKey());
+        download(
+          docxBytes(doc),
+          "PAB-komplet-dokumentacji.docx",
+          "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        );
+      });
   }
 
   function downloadDocx(kind) {
-    if (!hasAccess(kind, "docx")) return openPayModal(kind, "docx");
-    busyStart("Generuję DOCX…");
-    exportDocx(kind)
-      .then(function () { toast("Pobrano " + kind + ".docx"); })
+    busyStart(kind === ALL_DOCS ? "Generuję komplet DOCX…" : "Generuję DOCX…");
+    const task = kind === ALL_DOCS ? exportAllDocx() : exportDocx(kind);
+    task
+      .then(function () {
+        toast(kind === ALL_DOCS ? "Pobrano komplet dokumentacji DOCX." : "Pobrano " + kind + ".docx");
+      })
       .catch(function (err) { toast("Błąd eksportu: " + (err.message || err), "err"); })
       .then(busyStop);
   }
 
   function downloadPdf(kind) {
-    if (!hasAccess(kind, "pdf")) return openPayModal(kind, "pdf");
     busyStart("Przygotowuję wydruk…");
-    printDoc(kind)
+    const task = kind === ALL_DOCS ? printAll() : printDoc(kind);
+    task
       .catch(function (err) { toast("Błąd: " + (err.message || err), "err"); })
       .then(busyStop);
   }
 
-  /* --- bramka płatności ---------------------------------------------------- */
-
-  const OPTION_LABEL = {
-    bundle: "PDF + DOCX",
-    pdf: "sam PDF",
-    docx: "sam DOCX",
-  };
-
-  function openPayModal(kind, suggested) {
-    closePayModal();
-    const P = window.PABPayment.PRICES;
-    const label = window.PABPayment.label(kind);
-    const box = document.createElement("div");
-    box.id = "pay-modal";
-    box.className = "pay-modal";
-    box.innerHTML =
-      '<div class="pay-modal-card">' +
-      '<button class="pay-close" data-act="pay-close" aria-label="Zamknij">×</button>' +
-      "<h2>Pobierz: " + esc(label) + "</h2>" +
-      '<p class="small">Wybierz wariant płatności dla tego dokumentu. Link otworzy się w nowej karcie.</p>' +
-      '<div class="price-grid">' +
-      priceCard("PDF + DOCX", P.bundle, "najkorzystniej") +
-      priceCard("Sam PDF", P.pdf, "wydruk A4 do pliku") +
-      priceCard("Sam DOCX", P.docx, "edytowalny w Wordzie") +
-      "</div>" +
-      '<div class="pay-modal-options">' +
-      ["bundle", "pdf", "docx"]
-        .map(function (opt) {
-          const active = opt === suggested ? " primary" : "";
-          return (
-            '<button class="btn' + active + '" data-act="pay-go" data-kind="' + esc(kind) +
-            '" data-opt="' + opt + '">Kup ' + OPTION_LABEL[opt] + " · " + P[opt] + " zł</button>"
-          );
-        })
-        .join("") +
-      "</div>" +
-      '<div class="pay-confirm">' +
-      '<button class="link" data-act="pay-done" data-kind="' + esc(kind) + '" data-opt="' + esc(suggested || "bundle") +
-      '">Opłacone – odblokuj pliki</button>' +
-      '<p class="small muted">Wersja statyczna nie weryfikuje przelewu sama. Po zapłacie kliknij przycisk powyżej; ' +
-      "dostęp zapisze się w localStorage tej przeglądarki.</p>" +
-      "</div>" +
-      "</div>";
-    document.body.appendChild(box);
-  }
-
-  function closePayModal() {
-    const old = $("#pay-modal");
-    if (old && old.parentNode) old.parentNode.removeChild(old);
-  }
-
-  function payGo(kind, option) {
-    const url = window.PABPayment.url(kind, option);
-    if (!window.PABPayment.configured() || !url) {
-      toast("Skonfiguruj linki płatności w js/payment.js.", "err");
-      return;
-    }
-    window.open(url, "_blank", "noopener");
-    toast("Otworzono stronę płatności. Po zapłacie kliknij „Opłacone”.", "ok");
-  }
-
-  function payDone(kind, option) {
-    window.PABPayment.markPaid(kind, option);
-    closePayModal();
-    toast("Dostęp odblokowany: " + OPTION_LABEL[option] + ".", "ok");
-    render();
-  }
-
   // --- kontrola ------------------------------------------------------------
+
+  let lastIssues = [];
+  let pendingFocus = null;
 
   function runCheck() {
     const stage = $("#check-stage");
@@ -1518,6 +1570,7 @@
     stage.innerHTML = '<div class="panel"><p>Sprawdzam dane…</p></div>';
     window.PABEngine.validate(project)
       .then(function (issues) {
+        lastIssues = issues;
         const errors = issues.filter(function (i) { return i[0] === "error"; });
         const warns = issues.filter(function (i) { return i[0] === "warn"; });
         const infos = issues.filter(function (i) { return i[0] === "info"; });
@@ -1530,12 +1583,21 @@
 
         stage.innerHTML =
           '<section class="panel check ' + cls + '"><h2>' + label + "</h2>" +
-          '<p class="small">Błędy: ' + errors.length + " · Uwagi: " + warns.length + " · Informacje: " + infos.length + "</p></section>" +
+          '<p class="small">Błędy: ' + errors.length + " · Uwagi: " + warns.length + " · Informacje: " + infos.length +
+          " · kliknij pozycję, aby przejść do pola</p></section>" +
           (issues.length
             ? '<section class="panel"><ul class="issues">' +
               issues
-                .map(function (item) {
-                  return '<li class="' + item[0] + '"><span class="tag">' + esc(levelLabel(item[0])) + "</span>" + esc(item[1]) + "</li>";
+                .map(function (item, index) {
+                  const target = issueTarget(item[1]);
+                  const title = target ? "Przejdź do: " + target.label : "Przejdź do powiązanych danych";
+                  return '<li class="' + item[0] + '">' +
+                    '<button type="button" class="issue-link" data-act="goto-issue" data-issue="' + index +
+                    '" title="' + esc(title) + '">' +
+                    '<span class="tag">' + esc(levelLabel(item[0])) + "</span>" +
+                    '<span class="issue-text">' + esc(item[1]) + "</span>" +
+                    '<span class="issue-go" aria-hidden="true">→</span>' +
+                    "</button></li>";
                 })
                 .join("") +
               "</ul></section>"
@@ -1548,6 +1610,239 @@
 
   function levelLabel(level) {
     return { error: "błąd", warn: "uwaga", info: "info" }[level] || level;
+  }
+
+  function normText(value) {
+    return String(value || "")
+      .toLowerCase()
+      .replace(/ł/g, "l")
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "");
+  }
+
+  function compactLabel(label) {
+    return String(label || "").replace(/\[[^\]]*\]/g, "").replace(/\s+/g, " ").trim();
+  }
+
+  function fieldByLabel(label) {
+    const needle = normText(compactLabel(label));
+    const groups = F.groups || {};
+    for (const section of Object.keys(groups)) {
+      for (const group of groups[section]) {
+        for (const row of group.rows) {
+          if (normText(compactLabel(row.label)) === needle) {
+            return { section: section, key: row.key, label: compactLabel(row.label) };
+          }
+        }
+      }
+    }
+    return null;
+  }
+
+  function routeForSection(section) {
+    if (section === "ogolne" || section === "pzt" || section === "pab" || section === "bioz") {
+      return "dane/" + section;
+    }
+    if (section === "zal") return "zalaczniki";
+    return section;
+  }
+
+  function fieldSelector(section, key) {
+    return '[data-bind="' + section + "." + key + '"], [data-list="' + section + "." + key + '"]';
+  }
+
+  function targetFor(section, key, selector, label) {
+    return {
+      route: routeForSection(section),
+      selector: selector || (key ? fieldSelector(section, key) : "#view .panel"),
+      label: label || (key ? labelOf(section, key) : section)
+    };
+  }
+
+  /** Komunikat kontroli → zakładka, pole i etykieta do wyświetlenia. */
+  function issueTarget(message) {
+    const raw = String(message || "");
+    const low = normText(raw);
+    const has = function () {
+      for (let i = 0; i < arguments.length; i++) {
+        if (low.indexOf(normText(arguments[i])) >= 0) return true;
+      }
+      return false;
+    };
+
+    const labelled = raw.match(/^Brak (?:pola|parametru):\s*(.+?)\.$/);
+    if (labelled) {
+      const field = fieldByLabel(labelled[1]);
+      if (field) return targetFor(field.section, field.key, null, field.label);
+    }
+
+    const designer = raw.match(/^Projektant \(([^)]+)\):\s*brak (imienia i nazwiska|numeru uprawnie)/i);
+    if (designer) {
+      const fun = designer[1];
+      const field = designer[2].toLowerCase().indexOf("imienia") === 0 ? "imie" : "uprawnienia";
+      const rows = (project.ogolne && project.ogolne.projektanci) || [];
+      let index = -1;
+      for (let i = 0; i < rows.length; i++) {
+        if (normText(rows[i].funkcja) === normText(fun)) { index = i; break; }
+      }
+      if (index < 0) index = 0;
+      return targetFor(
+        "projektanci",
+        null,
+        '[data-row="projektanci"][data-index="' + index + '"][data-field="' + field + '"]',
+        "Projektant (" + fun + ") – " + (field === "imie" ? "imię i nazwisko" : "numer uprawnień")
+      );
+    }
+    if (has("brak projektanta", "dodaj co najmniej jedną osobę")) {
+      return targetFor("projektanci", null, '.btn[data-act="add-projektant"]', "Dodaj projektanta");
+    }
+    if (has("nie wskazano osoby pełniącej funkcję", "funkcję projektant")) {
+      return targetFor("projektanci", null, '[data-row="projektanci"][data-field="funkcja"]', "Funkcja projektanta");
+    }
+    if (has("uprawnie")) {
+      return targetFor("projektanci", null, '[data-row="projektanci"][data-field="uprawnienia"]', "Numer uprawnień");
+    }
+    if (has("projektant")) {
+      return targetFor("projektanci", null, "#view .table-editor", "Projektanci");
+    }
+
+    if (has("dokumenty do pozwolenia", "do uzupełnienia:")) {
+      const rows = project.dokumenty || [];
+      const listed = raw.split("do uzupełnienia:")[1] || "";
+      const firstName = compactLabel(listed.split(",")[0]).replace(/\.$/, "");
+      let index = -1;
+      for (let i = 0; i < rows.length; i++) {
+        if (normText(compactLabel(rows[i].nazwa)) === normText(firstName) && rows[i].status !== "Dołączony") {
+          index = i; break;
+        }
+      }
+      if (index < 0) {
+        for (let i = 0; i < rows.length; i++) {
+          if (rows[i].status !== "Dołączony") { index = i; break; }
+        }
+      }
+      if (index < 0) index = 0;
+      return targetFor(
+        "dokumenty",
+        null,
+        '[data-row="dokumenty"][data-index="' + index + '"][data-field="status"]',
+        "Dokumenty do pozwolenia"
+      );
+    }
+    if (has("zalacznik", "załacznik")) {
+      return targetFor("zal", null, "#view .table-editor", "Załączniki");
+    }
+
+    if (has("bilans")) {
+      return targetFor("bilans", null, '#view [data-row="bilans"][data-field="powierzchnia"]', "Bilans terenu");
+    }
+    if (has("powierzchnia zabudowy", "zabudow")) {
+      return targetFor("pzt", "mpzp_pow_zab", null, "Limit powierzchni zabudowy");
+    }
+    if (has("biologicznie czynn", "pbc")) {
+      return targetFor("pzt", "mpzp_pbc", null, "Powierzchnia biologicznie czynna");
+    }
+    if (has("intensywnosc")) {
+      return targetFor("pzt", "mpzp_intens", null, "Intensywność zabudowy");
+    }
+
+    if (has("wymagany", "obowiazek sporzadzenia")) {
+      return targetFor("bioz", "wymagany", null, "Obowiązek planu BIOZ");
+    }
+    if (has("prace szczegolnie niebezpieczne", "prace niebezpieczne")) {
+      return targetFor("bioz", "prace_niebezpieczne", null, "Prace szczególnie niebezpieczne");
+    }
+    if (has("zagrozen")) {
+      return targetFor("bioz", "zagrozenia", null, "Przewidywane zagrożenia");
+    }
+    if (has("srodki techniczne", "srodki organizacyjne")) {
+      return targetFor("bioz", "srodki", null, "Środki techniczne i organizacyjne");
+    }
+    if (has("zakres prac", "zakres robot", "kolejnosc realizacji")) {
+      return targetFor("bioz", "zakres_prac", null, "Zakres i kolejność robót");
+    }
+    if (has("bioz")) {
+      return targetFor("bioz", "zakres_prac", null, "Plan BIOZ");
+    }
+
+    if (has("ochron ludnosci", "ochrony ludnosci", "obiekt zbiorowej ochrony", "ochron")) {
+      return targetFor("pab", "ol_rodzaj", null, "Ochrona ludności");
+    }
+    if (has("stan istniejacy", "istniejac")) {
+      return targetFor("pzt", "stan_istniejacy", null, "Istniejący stan zagospodarowania");
+    }
+    if (has("planu miejscowego", "decyzji wz", "oznaczenia planu")) {
+      return targetFor("pzt", "mpzp_nazwa", null, "Plan miejscowy / decyzja WZ");
+    }
+    if (has("program uzytkowy")) {
+      return targetFor("pab", "program", null, "Program użytkowy");
+    }
+    if (has("forma", "architekton")) {
+      return targetFor("pab", "forma", null, "Układ przestrzenny i forma");
+    }
+    if (has("powierzchnia uzytkowa")) {
+      return targetFor("pab", "pow_uzytkowa", null, "Powierzchnia użytkowa");
+    }
+    if (has("powierzchnia calkowita")) {
+      return targetFor("pab", "pow_calkowita", null, "Powierzchnia całkowita");
+    }
+    if (has("kubatur")) {
+      return targetFor("pab", "kubatura", null, "Kubatura");
+    }
+    if (has("kondygnacji")) {
+      return targetFor("pab", "kondygnacje", null, "Liczba kondygnacji");
+    }
+    if (has("dostepno")) {
+      return targetFor("pab", "dost_kondygnacje", null, "Komunikacja pionowa");
+    }
+    if (has("odstepstw")) {
+      return targetFor("pab", "odstepstwo", null, "Odstępstwa");
+    }
+    if (has("data opracowania")) {
+      return targetFor("ogolne", "data", null, "Data opracowania");
+    }
+    if (has("dane kompletne")) {
+      return targetFor("podglad", null, "#preview-kind", "Podgląd dokumentów");
+    }
+    return targetFor("ogolne", null, "#view .panel", "Dane ogólne");
+  }
+
+  function gotoIssue(index) {
+    const item = lastIssues[index];
+    if (!item) return;
+    pendingFocus = issueTarget(item[1]);
+    if (route().join("/") === pendingFocus.route) applyPendingFocus();
+    else go(pendingFocus.route);
+  }
+
+  function applyPendingFocus() {
+    const focus = pendingFocus;
+    if (!focus) return;
+    pendingFocus = null;
+    if (route().join("/") !== focus.route) return;
+    let node = document.querySelector(focus.selector);
+    if (!node) node = document.querySelector("#view .panel");
+    if (!node) return;
+    const box = node.closest(".field, tr, .panel") || node;
+    const nodes = box === node ? [node] : [box, node];
+    const hasOwnTabIndex = node.hasAttribute("tabindex");
+    const focusable = node.matches("input, textarea, select, button, a[href]");
+    if (!hasOwnTabIndex && !focusable) node.setAttribute("tabindex", "-1");
+    nodes.forEach(function (element) { element.classList.add("issue-focus"); });
+    window.setTimeout(function () {
+      nodes.forEach(function (element) { element.classList.remove("issue-focus"); });
+      if (!hasOwnTabIndex && !focusable) node.removeAttribute("tabindex");
+    }, 5000);
+    try { node.focus({ preventScroll: true }); } catch (err) {
+      try { node.focus(); } catch (ignored) { /* brak wsparcia focus */ }
+    }
+    if ((node.tagName === "INPUT" || node.tagName === "TEXTAREA") && typeof node.select === "function") {
+      try { node.select(); } catch (err) { /* brak zaznaczenia */ }
+    }
+    if (typeof node.scrollIntoView === "function") {
+      node.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+    if (focus.label) toast("Przejdź do: " + focus.label);
   }
 
   // --- zdarzenia -----------------------------------------------------------
@@ -1669,13 +1964,34 @@
     }
     if (act === "delete-account") {
       const login = window.PABAuth.currentUser();
-      askConfirm("Usunąć konto „" + login + "” razem ze wszystkimi jego projektami " +
-        "zapisanymi w tej przeglądarce? Tej operacji nie można cofnąć.", "Usuń konto").then(function (ok) {
-        if (!ok) return;
-        removeAllProjects(login);
-        const result = window.PABAuth.deleteAccount();
-        if (!result.ok) { toast(result.error, "err"); return; }
-        window.location.reload();
+      const count = projectCountFor(login);
+      const finish = function () {
+        askConfirm("Czy na pewno usunąć konto „" + login + "” wraz ze wszystkimi " +
+          "zapisanymi w tej przeglądarce projektami? Tej operacji nie można cofnąć.",
+          "Usuń konto").then(function (ok) {
+          if (!ok) return;
+          removeAllProjects(login);
+          const result = window.PABAuth.deleteAccount();
+          if (!result.ok) { toast(result.error, "err"); return; }
+          window.location.reload();
+        });
+      };
+      if (!count) { finish(); return; }
+      const projectWord = count === 1 ? "projekt"
+        : (count >= 2 && count <= 4 ? "projekty" : "projektów");
+      askChoice("Czy pobrać kopię " + count + " " + projectWord + " konta „" + login +
+        "” przed usunięciem konta? Kopia zostanie zapisana jako plik ZIP.",
+        [
+          { value: "cancel", label: "Anuluj" },
+          { value: "skip", label: "Nie pobieraj" },
+          { value: "download", label: "Pobierz projekty", kind: "primary" }
+        ]).then(function (choice) {
+        if (choice === "cancel") return;
+        if (choice === "download" && !downloadProjects(login)) {
+          toast("Nie udało się przygotować kopii projektów. Usuwanie wstrzymane.", "err");
+          return;
+        }
+        finish();
       });
       return;
     }
@@ -1753,22 +2069,6 @@
       const kind = target.getAttribute("data-kind");
       return act === "dl-pdf" ? downloadPdf(kind) : downloadDocx(kind);
     }
-    if (act === "buy") {
-      openPayModal(target.getAttribute("data-kind"), target.getAttribute("data-opt"));
-      return;
-    }
-    if (act === "pay-go") {
-      payGo(target.getAttribute("data-kind"), target.getAttribute("data-opt"));
-      return;
-    }
-    if (act === "pay-done") {
-      payDone(target.getAttribute("data-kind"), target.getAttribute("data-opt"));
-      return;
-    }
-    if (act === "pay-close") {
-      closePayModal();
-      return;
-    }
     if (act === "word-close") {
       closeWordModal();
       return;
@@ -1776,6 +2076,10 @@
     if (act === "word-apply") {
       applyWordImport();
       return;
+    }
+    if (act === "goto-issue") {
+      const index = Number(target.getAttribute("data-issue"));
+      return gotoIssue(isNaN(index) ? -1 : index);
     }
     if (act === "run-check") return runCheck();
     if (act === "reload-engine") {
@@ -2070,7 +2374,7 @@
       '<main id="view"></main>' +
       '<footer class="footer">' +
       '<span>' + esc(F.app.credit) + " · " + esc(F.app.company) + "</span>" +
-      '<span><a href="#/eksport">Płatności</a> · <a href="#/o-programie">O programie</a> · ' +
+      '<span><a href="#/o-programie">O programie</a> · ' +
       '<a href="#/dokumenty">Dokumenty</a></span>' +
       "</footer>";
 

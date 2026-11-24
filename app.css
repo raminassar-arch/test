@@ -499,13 +499,20 @@ select.inline { width: auto; min-width: 260px; }
 .check.warn { border-left: 5px solid var(--gold); }
 .check.ok { border-left: 5px solid var(--success); }
 .issues { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
-.issues li { display: flex; gap: 10px; align-items: flex-start; font-size: 0.88rem; padding: 8px 10px; border-radius: 8px; background: var(--green-pale); }
+.issues li { border-radius: 8px; background: var(--green-pale); overflow: hidden; }
 .issues li.error { background: #fdf1ef; }
 .issues li.warn { background: var(--gold-pale); }
 .issues li.info { background: #f1f6fa; }
+.issue-link { width: 100%; display: flex; gap: 10px; align-items: flex-start; font: inherit; font-size: 0.88rem; color: inherit; text-align: left; background: transparent; border: 0; border-radius: 8px; padding: 8px 10px; cursor: pointer; }
+.issue-link:hover { background: rgba(255, 255, 255, 0.55); }
+.issue-link:focus-visible { outline: 2px solid var(--gold); outline-offset: -2px; }
+.issue-text { flex: 1 1 auto; }
+.issue-go { flex: none; color: var(--muted); font-weight: 700; }
 .issues .tag { flex: none; font-size: 0.68rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; padding: 2px 7px; border-radius: 999px; background: #fff; border: 1px solid var(--border); color: var(--muted); }
 .issues li.error .tag { color: var(--danger); border-color: #e8c6c0; }
 .issues li.warn .tag { color: var(--gold-text); border-color: #e6d5a8; }
+.issue-focus { outline: 2px solid var(--gold); outline-offset: 2px; border-radius: 6px; background: var(--gold-pale); box-shadow: 0 0 0 5px rgba(218, 165, 32, 0.18); }
+tr.issue-focus { background: var(--gold-pale); }
 
 /* --- o programie -------------------------------------------------------- */
 
@@ -540,15 +547,35 @@ select.inline { width: auto; min-width: 260px; }
   left: 50%;
   transform: translate(-50%, -50%) rotate(-32deg);
   font-family: var(--pab-head, Arial, sans-serif);
-  font-size: 30pt;
+  font-size: 26pt;
   font-weight: 700;
+  line-height: 1.15;
+  text-align: center;
   color: var(--pab-watermark, #1f3864);
   opacity: 0.11;
   white-space: nowrap;
   pointer-events: none;
   z-index: 0;
 }
-.paper .doc-cover, .paper .doc-toc, .paper .doc-body { position: relative; z-index: 1; }
+.paper .doc-cover, .paper .doc-toc, .paper .doc-body,
+.paper .doc-collection-item { position: relative; z-index: 1; }
+
+.paper .doc-collection-item + .doc-collection-item {
+  margin-top: 14mm;
+  padding-top: 10mm;
+  border-top: 2px solid var(--pab-rule, #bfbfbf);
+  page-break-before: always;
+  break-before: page;
+}
+.paper .doc-collection-title {
+  margin: 0 0 8mm;
+  padding-bottom: 3mm;
+  border-bottom: var(--pab-cover-rule, 1pt) solid var(--pab-h1, #1f3864);
+  text-align: center;
+  font-family: var(--pab-head, Arial, sans-serif);
+  font-size: 16pt;
+  color: var(--pab-h1, #1f3864);
+}
 
 .paper .doc-cover { padding-bottom: 8mm; }
 .paper .doc-part { text-align: center; font-family: var(--pab-head, Arial, sans-serif); font-size: 10pt; font-weight: 700; color: var(--pab-faint, #7f7f7f); margin-top: 4mm; }
@@ -663,7 +690,7 @@ select.inline { width: auto; min-width: 260px; }
   margin: 16px;
 }
 .ask-msg { margin: 0 0 18px; font-size: 0.95rem; }
-.ask-actions { display: flex; gap: 10px; justify-content: flex-end; }
+.ask-actions { display: flex; flex-wrap: wrap; gap: 10px; justify-content: flex-end; }
 
 .boot { display: grid; place-items: center; gap: 12px; padding: 90px 20px; color: var(--muted); }
 .boot .logo { width: 58px; height: 58px; font-size: 1.15rem; }
@@ -690,6 +717,16 @@ select.inline { width: auto; min-width: 260px; }
 }
 
 @media print {
+  @page {
+    size: A4;
+    margin: 18mm 16mm 20mm;
+    @bottom-center {
+      content: "Strona " counter(page) " z " counter(pages);
+      font-family: Arial, sans-serif;
+      font-size: 8pt;
+      color: #595959;
+    }
+  }
   .topbar, .steps, .footer, .head-actions, .toast, #busy, #ask { display: none !important; }
   body { background: #fff; }
   main { padding: 0; max-width: none; }

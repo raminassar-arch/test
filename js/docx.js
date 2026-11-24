@@ -528,7 +528,8 @@
   function watermarkXml(suffix) {
     const color = hx(T.watermarkColor);
     const font = esc(T.headFont);
-    const text = esc(T.watermark);
+    const lines = T.watermark.split("\n");
+    const text = lines.map(esc).join("&#13;");
     return (
       '<w:r><w:pict xmlns:v="urn:schemas-microsoft-com:vml" ' +
       'xmlns:o="urn:schemas-microsoft-com:office:office">' +
@@ -553,7 +554,7 @@
       '<v:shape id="' + suffix + 'Watermark" o:spid="_x0000_s' +
       (suffix === "wm1" ? "2049" : "2050") + '" ' +
       'type="#_x0000_t136_' + suffix + '" ' +
-      'style="position:absolute;margin-left:0;margin-top:0;width:468pt;height:117pt;' +
+      'style="position:absolute;margin-left:0;margin-top:0;width:468pt;height:170pt;' +
       'rotation:315;z-index:-251658752;mso-position-horizontal:center;' +
       'mso-position-horizontal-relative:margin;mso-position-vertical:center;' +
       'mso-position-vertical-relative:margin" fillcolor="#' + color + '" stroked="f">' +
@@ -617,11 +618,12 @@
       '<w:headerReference w:type="default" r:id="rId3"/>' +
       '<w:headerReference w:type="first" r:id="rId5"/>' +
       '<w:footerReference w:type="default" r:id="rId4"/>' +
+      '<w:footerReference w:type="first" r:id="rId6"/>' +
       '<w:pgSz w:w="' + PAGE_W + '" w:h="' + PAGE_H + '"/>' +
       '<w:pgMar w:top="' + MARGIN.top + '" w:right="' + MARGIN.right + '" w:bottom="' +
       MARGIN.bottom + '" w:left="' + MARGIN.left + '" w:header="680" w:footer="624" w:gutter="0"/>' +
-      "<w:titlePg/>" +
       '<w:cols w:space="708"/>' +
+      "<w:titlePg/>" +
       '<w:docGrid w:linePitch="360"/>' +
       "</w:sectPr>";
 
@@ -662,7 +664,7 @@
       XML_HEAD +
       '<Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties"' +
       ' xmlns:vt="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes">' +
-      "<Application>PAB cyfrowa</Application><AppVersion>1.5.2</AppVersion>" +
+      "<Application>PAB cyfrowa</Application><AppVersion>1.5000</AppVersion>" +
       "<Company>BIM architects &amp; consultants</Company>" +
       "</Properties>"
     );
@@ -681,6 +683,7 @@
       '<Override PartName="/word/header1.xml" ContentType="' + w + '.header+xml"/>' +
       '<Override PartName="/word/header2.xml" ContentType="' + w + '.header+xml"/>' +
       '<Override PartName="/word/footer1.xml" ContentType="' + w + '.footer+xml"/>' +
+      '<Override PartName="/word/footer2.xml" ContentType="' + w + '.footer+xml"/>' +
       '<Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/>' +
       '<Override PartName="/docProps/app.xml" ContentType="application/vnd.openxmlformats-officedocument.extended-properties+xml"/>' +
       "</Types>"
@@ -707,6 +710,7 @@
       '<Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" Target="header1.xml"/>' +
       '<Relationship Id="rId4" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer" Target="footer1.xml"/>' +
       '<Relationship Id="rId5" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" Target="header2.xml"/>' +
+      '<Relationship Id="rId6" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer" Target="footer2.xml"/>' +
       "</Relationships>"
     );
   }
@@ -739,6 +743,7 @@
       { name: "word/header1.xml", data: headerXml(short) },
       { name: "word/header2.xml", data: firstHeaderXml() },
       { name: "word/footer1.xml", data: footerXml() },
+      { name: "word/footer2.xml", data: footerXml() },
       { name: "word/_rels/document.xml.rels", data: documentRelsXml() },
     ];
     return window.PABZip.zip(entries);
