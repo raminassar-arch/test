@@ -3,7 +3,8 @@
     {
       "login": "Rami93",
       "password": "test",
-      "display": "Rami Nassar"
+      "display": "Rami Nassar",
+      "admin": true
     }
   ]
 }

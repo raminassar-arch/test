@@ -10,26 +10,134 @@
   const F = window.PAB_FIELDS;
   const LEGACY_PROJECT_KEY = "pab.sites.project.v1";
   const PROJECT_PREFIX = LEGACY_PROJECT_KEY + "|";
+  const PROJECTS_INDEX_PREFIX = "pab.sites.projects.v1|";
+  const MAX_PROJECTS = 10;
 
-  function projectKey() {
+  function currentLogin() {
     const user = window.PABAuth && window.PABAuth.currentUser
       ? window.PABAuth.currentUser() : "";
-    return PROJECT_PREFIX + (user || "gosc");
+    return user || "gosc";
   }
 
-  /** Stary projekt przejmuje tylko pierwsze konto z listy. */
-  function migrateLegacyProject() {
+  function indexKey(login) {
+    return PROJECTS_INDEX_PREFIX + (login || currentLogin());
+  }
+
+  function projectKey(id) {
+    return PROJECT_PREFIX + currentLogin() + "|" + (id || activeId);
+  }
+
+  /** Spis projektów danego konta: {active, items:[{id,name,updated}]}. */
+  function readIndex(login) {
     try {
-      const raw = localStorage.getItem(LEGACY_PROJECT_KEY);
-      const key = projectKey();
-      const users = window.PABAuth && window.PABAuth.users ? window.PABAuth.users() : [];
-      if (raw && !localStorage.getItem(key) && users.length &&
-          users[0].login === window.PABAuth.currentUser()) {
-        localStorage.setItem(key, raw);
+      const raw = localStorage.getItem(indexKey(login));
+      const idx = raw ? JSON.parse(raw) : null;
+      if (!idx || !Array.isArray(idx.items)) return null;
+      idx.items = idx.items.filter(function (item) {
+        return item && typeof item.id === "string" && item.id;
+      }).map(function (item) {
+        return {
+          id: item.id,
+          name: String(item.name || "Projekt").slice(0, 60),
+          updated: Number(item.updated) || Date.now()
+        };
+      });
+      if (!idx.items.length) return null;
+      if (!idx.items.some(function (item) { return item.id === idx.active; })) {
+        idx.active = idx.items[0].id;
       }
+      return idx;
+    } catch (err) {
+      return null;
+    }
+  }
+
+  function writeIndex(idx, login) {
+    try {
+      localStorage.setItem(indexKey(login), JSON.stringify(idx));
+      return true;
+    } catch (err) {
+      toast("Nie udało się zapisać listy projektów w przeglądarce.", "err");
+      return false;
+    }
+  }
+
+  function newIndex() {
+    return {
+      active: "p1",
+      items: [{ id: "p1", name: "Projekt 1", updated: Date.now() }]
+    };
+  }
+
+  function nextId(idx) {
+    let n = 1;
+    while (idx.items.some(function (item) { return item.id === "p" + n; })) n += 1;
+    return "p" + n;
+  }
+
+  function nextName(idx) {
+    let n = 1;
+    while (idx.items.some(function (item) { return item.name === "Projekt " + n; })) n += 1;
+    return "Projekt " + n;
+  }
+
+  /** Pierwsze uruchomienie: przenosi stary, pojedynczy projekt do spisu. */
+  function migrateLegacyProject() {
+    const login = currentLogin();
+    let idx = readIndex(login);
+    if (!idx) {
+      idx = newIndex();
+      const users = window.PABAuth && window.PABAuth.users ? window.PABAuth.users() : [];
+      const first = users.length && users[0].login === login;
+      const own = LEGACY_PROJECT_KEY + "|" + login;
+      const raw = localStorage.getItem(own) ||
+        (first ? localStorage.getItem(LEGACY_PROJECT_KEY) : null);
+      if (raw) {
+        try {
+          const data = JSON.parse(raw);
+          if (data && data.ogolne && data.ogolne.nazwa) {
+            idx.items[0].name = String(data.ogolne.nazwa).slice(0, 60);
+          }
+        } catch (err) { /* uszkodzony stary projekt – zostaje pusty */ }
+        try {
+          localStorage.setItem(projectKey(idx.items[0].id), raw);
+          localStorage.removeItem(own);
+          if (first) localStorage.removeItem(LEGACY_PROJECT_KEY);
+        } catch (err) { /* brak dostępu do pamięci */ }
+      }
+      writeIndex(idx, login);
+    }
+    activeId = idx.active;
+  }
+
+  function projectCountFor(login) {
+    const idx = readIndex(login);
+    if (idx) return idx.items.length;
+    try {
+      return localStorage.getItem(PROJECT_PREFIX + login) ||
+        localStorage.getItem(LEGACY_PROJECT_KEY) ? 1 : 0;
+    } catch (err) {
+      return 0;
+    }
+  }
+
+  function removeAllProjects(login) {
+    const who = login || currentLogin();
+    const idx = readIndex(who);
+    if (idx) {
+      idx.items.forEach(function (item) {
+        try { localStorage.removeItem(PROJECT_PREFIX + who + "|" + item.id); }
+        catch (err) { /* brak dostępu do pamięci */ }
+      });
+    }
+    try {
+      localStorage.removeItem(indexKey(who));
+      localStorage.removeItem(PROJECT_PREFIX + who);
+      localStorage.removeItem(LEGACY_PROJECT_KEY + "|" + who);
     } catch (err) { /* brak dostępu do pamięci */ }
   }
 
+  let activeId = "p1";
   let project = null;
   let engine = { state: "idle", error: "" }; // idle | loading | ready | error
   let enginePromise = null;
@@ -206,6 +314,7 @@
     const write = function () {
       try {
         localStorage.setItem(projectKey(), JSON.stringify(project));
+        touchProject(activeId);
         const chip = $("#save-state");
         if (chip) {
           chip.textContent = "zapisano " + new Date().toLocaleTimeString("pl-PL");
@@ -233,6 +342,125 @@
     saveProject(true);
     if (message) toast(message);
     render();
+  }
+
+  function touchProject(id) {
+    const idx = readIndex(currentLogin());
+    if (!idx) return;
+    const item = idx.items.find(function (entry) { return entry.id === id; });
+    if (!item) return;
+    item.updated = Date.now();
+    writeIndex(idx);
+  }
+
+  // --- zarządzanie projektami (panel konta) --------------------------------
+
+  function createProject() {
+    const idx = readIndex(currentLogin()) || newIndex();
+    if (idx.items.length >= MAX_PROJECTS) {
+      toast("Możesz mieć najwyżej 10 projektów. Usuń jeden, aby dodać kolejny.", "err");
+      return;
+    }
+    saveProject(true);
+    const id = nextId(idx);
+    const name = nextName(idx);
+    idx.items.push({ id: id, name: name, updated: Date.now() });
+    idx.active = id;
+    if (!writeIndex(idx)) return;
+    activeId = id;
+    project = emptyProject();
+    saveProject(true);
+    render();
+    toast("Utworzono projekt „" + name + "” (" + idx.items.length + "/" + MAX_PROJECTS + ").");
+  }
+
+  function openProject(id) {
+    const idx = readIndex(currentLogin());
+    if (!idx || id === activeId) return;
+    const item = idx.items.find(function (entry) { return entry.id === id; });
+    if (!item) return;
+    saveProject(true);
+    idx.active = id;
+    if (!writeIndex(idx)) return;
+    activeId = id;
+    project = loadProject() || emptyProject();
+    render();
+    go("start");
+    toast("Otwarto projekt „" + item.name + "”.");
+  }
+
+  function renameProject(id) {
+    const input = document.getElementById("project-name-" + id);
+    if (!input) return;
+    const name = input.value.trim().slice(0, 60);
+    if (!name) { toast("Podaj nazwę projektu.", "err"); return; }
+    const idx = readIndex(currentLogin());
+    if (!idx) return;
+    const item = idx.items.find(function (entry) { return entry.id === id; });
+    if (!item) return;
+    item.name = name;
+    item.updated = Date.now();
+    if (!writeIndex(idx)) return;
+    render();
+    toast("Zmieniono nazwę projektu.");
+  }
+
+  function copyProject(id) {
+    const idx = readIndex(currentLogin());
+    if (!idx) return;
+    if (idx.items.length >= MAX_PROJECTS) {
+      toast("Możesz mieć najwyżej 10 projektów. Usuń jeden, aby dodać kolejny.", "err");
+      return;
+    }
+    const source = idx.items.find(function (entry) { return entry.id === id; });
+    if (!source) return;
+    let raw = null;
+    try { raw = localStorage.getItem(PROJECT_PREFIX + currentLogin() + "|" + id); }
+    catch (err) { /* brak dostępu do pamięci */ }
+    if (!raw) { toast("Nie udało się odczytać projektu.", "err"); return; }
+    saveProject(true);
+    const newId = nextId(idx);
+    try { localStorage.setItem(PROJECT_PREFIX + currentLogin() + "|" + newId, raw); }
+    catch (err) { toast("Nie udało się skopiować projektu.", "err"); return; }
+    const name = (source.name.slice(0, 54) + " (kopia)").slice(0, 60);
+    idx.items.push({ id: newId, name: name, updated: Date.now() });
+    idx.active = newId;
+    if (!writeIndex(idx)) return;
+    activeId = newId;
+    project = loadProject() || emptyProject();
+    render();
+    go("start");
+    toast("Utworzono kopię projektu „" + source.name + "”.");
+  }
+
+  function deleteProject(id) {
+    const idx = readIndex(currentLogin());
+    if (!idx) return;
+    const item = idx.items.find(function (entry) { return entry.id === id; });
+    if (!item) return;
+    askConfirm("Usunąć projekt „" + item.name + "” z tej przeglądarki? Tej operacji nie można cofnąć.",
+      "Usuń projekt").then(function (ok) {
+      if (!ok) return;
+      saveProject(true);
+      const login = currentLogin();
+      try { localStorage.removeItem(PROJECT_PREFIX + login + "|" + id); }
+      catch (err) { toast("Nie udało się usunąć danych projektu.", "err"); return; }
+      idx.items = idx.items.filter(function (entry) { return entry.id !== id; });
+      if (!idx.items.length) {
+        const fresh = newIndex();
+        idx.items = fresh.items;
+        try {
+          localStorage.setItem(PROJECT_PREFIX + login + "|" + fresh.items[0].id,
+            JSON.stringify(emptyProject()));
+        } catch (err) { /* brak dostępu do pamięci */ }
+      }
+      if (idx.active === id) idx.active = idx.items[0].id;
+      if (!writeIndex(idx)) return;
+      activeId = idx.active;
+      project = loadProject() || emptyProject();
+      render();
+      toast("Usunięto projekt „" + item.name + "”.");
+    });
   }
 
   function getVal(section, key) {
@@ -330,6 +558,7 @@
     dokumenty: "Dokumenty",
     zalaczniki: "Załączniki",
     "o-programie": "O programie",
+    konto: "Panel konta",
   };
 
   // --- widoki --------------------------------------------------------------
@@ -834,6 +1063,107 @@
     );
   }
 
+  // --- panel konta ---------------------------------------------------------
+
+  function viewAccount() {
+    const auth = window.PABAuth || {};
+    const login = auth.currentUser ? auth.currentUser() : "";
+    const display = auth.displayName ? auth.displayName() : login;
+    const local = auth.isLocalAccount ? auth.isLocalAccount() : false;
+    const idx = readIndex(currentLogin()) || newIndex();
+    const count = idx.items.length;
+
+    const projectRows = idx.items.map(function (item) {
+      const active = item.id === idx.active;
+      return "<tr>" +
+        "<td><strong>" + esc(item.name) + "</strong>" +
+          (active ? ' <span class="chip ready">aktywny</span>' : "") +
+          '<div class="small muted">id: ' + esc(item.id) + "</div></td>" +
+        '<td class="small">' + esc(new Date(item.updated).toLocaleString("pl-PL")) + "</td>" +
+        '<td><div class="row-actions">' +
+          '<button class="btn small' + (active ? "" : " primary") + '" data-act="project-open" ' +
+            'data-id="' + esc(item.id) + '"' + (active ? " disabled" : "") + ">Otwórz</button>" +
+          '<input id="project-name-' + esc(item.id) + '" type="text" maxlength="60" ' +
+            'value="' + esc(item.name) + '" aria-label="Nazwa projektu">' +
+          '<button class="btn small" data-act="project-rename" data-id="' + esc(item.id) +
+            '">Zapisz nazwę</button>' +
+          '<button class="btn small" data-act="project-copy" data-id="' + esc(item.id) + '"' +
+            (count >= MAX_PROJECTS ? " disabled" : "") + ">Duplikuj</button>" +
+          '<button class="btn small danger" data-act="project-delete" data-id="' + esc(item.id) +
+            '">Usuń</button>' +
+          "</div></td></tr>";
+    }).join("");
+
+    const admin = !!(auth.isAdmin && auth.isAdmin());
+    const userRows = admin ? (auth.accountList ? auth.accountList() : []).map(function (u) {
+      return "<tr><td><strong>" + esc(u.login) + "</strong>" +
+          (u.admin ? ' <span class="chip ready">administrator</span>' : "") + "</td>" +
+        "<td>" + esc(u.display) + "</td>" +
+        "<td>" + (u.local ? "lokalne na tym urządzeniu" : "accounts.json") + "</td>" +
+        "<td>" + projectCountFor(u.login) + " / " + MAX_PROJECTS + "</td></tr>";
+    }).join("") : "";
+
+    return (
+      '<section class="panel">' +
+      '<div class="panel-head"><h2>Panel konta</h2><span class="chip user">' + esc(display) +
+        "</span></div>" +
+      '<p class="small">Login: <strong>' + esc(login) + "</strong> · " +
+        (local ? "konto lokalne zapisane na tym urządzeniu" : "konto z pliku accounts.json") +
+        "</p></section>" +
+
+      '<section class="panel">' +
+      '<div class="panel-head"><h2>Projekty</h2><span class="chip' +
+        (count >= MAX_PROJECTS ? " ready" : "") + '">' + count + " / " + MAX_PROJECTS +
+        "</span></div>" +
+      '<p class="small">Każde konto może mieć najwyżej 10 projektów. Dane każdego z nich ' +
+        "są zapisywane osobno w tej przeglądarce.</p>" +
+      '<div class="table-editor project-table"><table><thead><tr>' +
+        "<th>Projekt</th><th>Ostatnia zmiana</th><th>Akcje</th>" +
+        "</tr></thead><tbody>" + projectRows + "</tbody></table></div>" +
+      '<div class="row-actions"><button class="btn primary" data-act="project-new"' +
+        (count >= MAX_PROJECTS ? " disabled" : "") + ">Nowy projekt</button></div>" +
+      "</section>" +
+
+      '<section class="panel">' +
+      "<h2>Ustawienia konta</h2>" +
+      (local
+        ? '<p class="small">Zmiana nazwy działa od razu. Przy zmianie hasła podaj aktualne ' +
+            "hasło oraz nowe hasło dwukrotnie.</p>" +
+          '<div class="grid two">' +
+          '<label class="field"><span class="field-label">Nazwa wyświetlana</span>' +
+            '<input type="text" id="account-display" maxlength="60" value="' + esc(display) +
+            '"></label>' +
+          '<label class="field"><span class="field-label">Aktualne hasło ' +
+            "(tylko przy zmianie)</span>" +
+            '<input type="password" id="account-current" autocomplete="current-password"></label>' +
+          '<label class="field"><span class="field-label">Nowe hasło ' +
+            "(zostaw puste, aby nie zmieniać)</span>" +
+            '<input type="password" id="account-password" autocomplete="new-password" ' +
+            'minlength="4"></label>' +
+          '<label class="field"><span class="field-label">Powtórz nowe hasło</span>' +
+            '<input type="password" id="account-password2" autocomplete="new-password" ' +
+            'minlength="4"></label>' +
+          "</div>" +
+          '<div class="row-actions"><button class="btn primary" data-act="account-save">' +
+            "Zapisz ustawienia</button>" +
+          '<button class="btn danger" data-act="delete-account">Usuń konto</button></div>'
+        : '<p class="small">To konto pochodzi z pliku <code>accounts.json</code>. Nazwę ' +
+          "i hasło zmienia właściciel strony w tym pliku; usunięcie konta z poziomu " +
+          "strony nie jest możliwe.</p>") +
+      "</section>" +
+
+      (admin
+        ? '<section class="panel"><h2>Użytkownicy (widoczni na tym urządzeniu)</h2>' +
+          '<p class="small">Administrator widzi konta z pliku <code>accounts.json</code> ' +
+          "oraz konta utworzone na tym urządzeniu. Aplikacja nie zbiera danych z innych " +
+          "urządzeń i nie pokazuje haseł.</p>" +
+          '<div class="table-editor"><table><thead><tr>' +
+          "<th>Login</th><th>Nazwa wyświetlana</th><th>Źródło</th><th>Projekty</th>" +
+          "</tr></thead><tbody>" + userRows + "</tbody></table></div></section>"
+        : "")
+    );
+  }
+
   // --- render --------------------------------------------------------------
 
   function render() {
@@ -857,6 +1187,7 @@
     else if (head === "eksport" || head === "export") html = viewExport();
     else if (head === "kontrola" || head === "check") html = viewCheck();
     else if (head === "o-programie") html = viewAbout();
+    else if (head === "konto") html = viewAccount();
     else html = viewStart();
 
     view.innerHTML = html;
@@ -1239,12 +1570,39 @@
       });
       return;
     }
+    if (act === "project-new") { createProject(); return; }
+    if (act === "project-open") { openProject(target.getAttribute("data-id")); return; }
+    if (act === "project-rename") { renameProject(target.getAttribute("data-id")); return; }
+    if (act === "project-copy") { copyProject(target.getAttribute("data-id")); return; }
+    if (act === "project-delete") { deleteProject(target.getAttribute("data-id")); return; }
+    if (act === "account-save") {
+      const value = function (id) {
+        const input = document.getElementById(id);
+        return input ? input.value : "";
+      };
+      const password = value("account-password");
+      if (password !== value("account-password2")) {
+        toast("Nowe hasła nie są identyczne.", "err");
+        return;
+      }
+      const result = window.PABAuth.updateAccount({
+        display: value("account-display"),
+        current: value("account-current"),
+        password: password
+      });
+      if (!result.ok) { toast(result.error, "err"); return; }
+      const chip = $("#user-chip");
+      if (chip) chip.textContent = window.PABAuth.displayName();
+      render();
+      toast("Ustawienia konta zapisane.");
+      return;
+    }
     if (act === "delete-account") {
       const login = window.PABAuth.currentUser();
-      askConfirm("Usunąć konto „" + login + "” razem z jego projektem zapisanym " +
-        "w tej przeglądarce? Tej operacji nie można cofnąć.", "Usuń konto").then(function (ok) {
+      askConfirm("Usunąć konto „" + login + "” razem ze wszystkimi jego projektami " +
+        "zapisanymi w tej przeglądarce? Tej operacji nie można cofnąć.", "Usuń konto").then(function (ok) {
         if (!ok) return;
-        localStorage.removeItem(projectKey());
+        removeAllProjects(login);
         const result = window.PABAuth.deleteAccount();
         if (!result.ok) { toast(result.error, "err"); return; }
         window.location.reload();
@@ -1623,9 +1981,7 @@
       '<span class="chip" id="engine-chip">silnik: nieuruchomiony</span>' +
       '<span class="chip save" id="save-state">zapis lokalny</span>' +
       (who ? '<span class="chip user" id="user-chip" title="Zalogowano jako ' + esc(who) + '">' + esc(who) + '</span>' : "") +
-      (window.PABAuth && window.PABAuth.isLocalAccount && window.PABAuth.isLocalAccount()
-        ? '<button type="button" class="btn small danger" data-act="delete-account" ' +
-          'title="Usuwa konto i jego projekt z tej przeglądarki">Usuń konto</button>' : "") +
+      '<a class="btn small" href="#/konto" title="Projekty i ustawienia konta">Panel konta</a>' +
       '<button type="button" class="btn small" data-act="logout">Wyloguj</button>' +
       "</div>" +
       "</header>" +

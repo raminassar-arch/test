@@ -18,9 +18,11 @@
    Rejestr zdarzeń kont nie jest prowadzony – konta lokalne istnieją wyłącznie
    w przeglądarce użytkownika.
 
-   Konto lokalne można usunąć przyciskiem „Usuń konto” w pasku nagłówka –
-   znika wtedy konto i jego projekt z tej przeglądarki (bezpowrotnie).
-   Kont z accounts.json nie usuwa się z poziomu strony.
+   Panel konta (#/konto) pozwala zmienić nazwę wyświetlaną i hasło konta
+   lokalnego oraz usunąć je wraz ze wszystkimi projektami. Konta z accounts.json
+   są tam tylko do odczytu – zmienia je właściciel w pliku. Administrator
+   („admin": true w accounts.json) widzi w panelu listę kont dostępnych
+   na tym urządzeniu (bez haseł).
 
    UWAGA: w aplikacji statycznej login i hasło kont z accounts.json są widoczne
    w źródle i w pliku accounts.json. Jest to wygodna brama dostępu, a nie
@@ -67,7 +69,8 @@
       return {
         login: user.login,
         password: user.password,
-        display: user.display || user.login
+        display: user.display || user.login,
+        admin: !!user.admin
       };
     });
   }
@@ -233,6 +236,62 @@
       if (localAccounts[i].login === login) return true;
     }
     return false;
+  }
+
+  /** Lista kont widocznych w tej przeglądarce (bez haseł) – dla panelu admina. */
+  function accountList() {
+    return allAccounts().map(function (user) {
+      return {
+        login: user.login,
+        display: user.display || user.login,
+        local: !!user.local,
+        admin: !!user.admin
+      };
+    });
+  }
+
+  function isAdmin() {
+    var user = find(currentUser());
+    return !!(user && user.admin);
+  }
+
+  /** Zmienia nazwę i/lub hasło konta lokalnego. Zmianę hasła zabezpiecza
+      podanie aktualnego hasła. Sesja pozostaje zalogowana w tym samym
+      magazynie (localStorage albo sessionStorage). */
+  function updateAccount(input) {
+    var login = currentUser();
+    var idx = -1;
+    for (var i = 0; i < localAccounts.length; i += 1) {
+      if (localAccounts[i].login === login) { idx = i; break; }
+    }
+    if (idx < 0) {
+      return { ok: false, error: "Ustawienia konta z accounts.json zmienia właściciel w pliku." };
+    }
+    var user = localAccounts[idx];
+    var changes = input || {};
+    var store = validLogin(window.localStorage) ? window.localStorage : window.sessionStorage;
+    var oldDisplay = user.display;
+    var oldHash = user.hash;
+    var display = String(changes.display == null ? "" : changes.display).trim();
+    var password = String(changes.password == null ? "" : changes.password);
+    if (display.length > 60) display = display.slice(0, 60);
+    if (password) {
+      if (password.length < 4) {
+        return { ok: false, error: "Nowe hasło musi mieć co najmniej 4 znaki." };
+      }
+      if (!passwordMatches(user, String(changes.current == null ? "" : changes.current))) {
+        return { ok: false, error: "Aktualne hasło jest nieprawidłowe." };
+      }
+      user.hash = digest(user.login + "|" + password);
+    }
+    if (display) user.display = display;
+    if (!saveLocal()) {
+      user.display = oldDisplay;
+      user.hash = oldHash;
+      return { ok: false, error: "Nie udało się zapisać ustawień w pamięci przeglądarki." };
+    }
+    try { store.setItem(KEY, tokenFor(user)); } catch (err) { /* sesja trwa dalej */ }
+    return { ok: true };
   }
 
   /* Usuwa zalogowane konto lokalne wraz z sesją. Projekt usuwa aplikacja
@@ -439,6 +498,9 @@
     login: login,
     register: register,
     isLocalAccount: isLocalAccount,
+    accountList: accountList,
+    isAdmin: isAdmin,
+    updateAccount: updateAccount,
     deleteAccount: deleteAccount,
     logout: logout,
     showLogin: showLogin,

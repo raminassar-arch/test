@@ -81,16 +81,27 @@ hasło: min. 4 znaki.
 * **„Zapamiętaj mnie na tym urządzeniu"** (domyślnie zaznaczone) zapisuje sesję
   w `localStorage` pod kluczem `pab.sites.auth.v1`. Bez zaznaczenia sesja trwa
   do zamknięcia karty (`sessionStorage`).
-* **Każde konto ma własny projekt** w `localStorage` pod kluczem
-  `pab.sites.project.v1|<login>`. Stary, wspólny projekt
-  (`pab.sites.project.v1`) jest jednorazowo przejmowany przez pierwsze konto
-  z listy. Nazwa zalogowanej osoby jest widoczna w pasku nagłówka.
+* **Panel konta** (`#/konto`, przycisk „Panel konta" w pasku nagłówka) pozwala
+  zarządzać projektami i ustawieniami konta. Nazwa zalogowanej osoby jest
+  widoczna w pasku nagłówka.
+* **Do 10 projektów na konto**: nowy, otwieranie, zmiana nazwy, duplikowanie
+  i usuwanie (z licznikiem `x / 10`). Dane każdego projektu leżą pod kluczem
+  `pab.sites.project.v1|<login>|<id>`, a spis projektów pod
+  `pab.sites.projects.v1|<login>`. Stary, pojedynczy projekt
+  (`pab.sites.project.v1`) jest jednorazowo przenoszony do pierwszego projektu
+  konta, które było nim zalogowane.
+* **Ustawienia konta lokalnego**: zmiana nazwy wyświetlanej i hasła (zmianę
+  hasła zabezpiecza podanie aktualnego) oraz **usunięcie konta** razem ze
+  wszystkimi jego projektami, po potwierdzeniu w oknie aplikacji. Operacji nie
+  można cofnąć. Konta z `accounts.json` są w panelu tylko do odczytu – zmienia
+  je właściciel w pliku.
+* **Administrator** (`"admin": true` przy koncie w `accounts.json`, domyślnie
+  `Rami93`) widzi w panelu listę kont dostępnych na tym urządzeniu: login,
+  nazwę wyświetlaną, źródło konta i liczbę projektów – **bez haseł**. To jedyne
+  możliwe źródło w wersji statycznej: aplikacja nie wysyła danych na serwer
+  i nie widzi kont utworzonych na innych urządzeniach.
 * Przycisk **„Wyloguj"** w prawym górnym rogu paska nagłówka czyści oba zapisy
   i przeładowuje stronę na ekran logowania.
-* Przycisk **„Usuń konto"** (tylko dla kont lokalnych, obok „Wyloguj") trwale
-  usuwa konto **razem z jego projektem** z tej przeglądarki, po potwierdzeniu
-  w oknie aplikacji. Operacji nie można cofnąć. Kont z `accounts.json` nie
-  usuwa się z poziomu strony – robi to właściciel, edytując plik.
 * Dostęp do płatnych plików (`pab.sites.paid.v1`) jest niezależny od logowania.
 
 > **Ważne:** w aplikacji statycznej login i hasło są widoczne w źródle strony
