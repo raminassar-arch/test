@@ -103,6 +103,19 @@ small { font-size: 0.82rem; }
 .chip.save.flash { background: rgba(228, 194, 116, 0.35); }
 .chip.user { max-width: 180px; overflow: hidden; text-overflow: ellipsis; font-weight: 600; color: #fdf4dc; border-color: rgba(228, 194, 116, 0.5); }
 
+.project-picker { display: inline-flex; align-items: center; gap: 6px; font-size: 0.74rem; color: rgba(255, 255, 255, 0.85); }
+.project-picker select {
+  max-width: 180px;
+  padding: 4px 8px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  background: rgba(255, 255, 255, 0.14);
+  color: #fff;
+  font: inherit;
+  font-size: 0.78rem;
+}
+.project-picker select option { color: #1d3327; background: #fff; }
+
 .badge {
   display: inline-block;
   padding: 4px 11px;

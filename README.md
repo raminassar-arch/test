@@ -90,6 +90,11 @@ hasło: min. 4 znaki.
   `pab.sites.projects.v1|<login>`. Stary, pojedynczy projekt
   (`pab.sites.project.v1`) jest jednorazowo przenoszony do pierwszego projektu
   konta, które było nim zalogowane.
+* **Wybór projektu** jest dostępny w nagłówku (lista rozwijana) – zmiana wyboru
+  zapisuje bieżący projekt i otwiera wskazany. W zakładkach formularzy
+  (`Dane ogólne`, `PZT`, `PAB`, `BIOZ`, `Projektanci`, `Bilans`, `Załączniki`)
+  jest przycisk **„Zapisz do projektu"**, który wymusza natychmiastowy zapis
+  danych tej zakładki do aktywnie wybranego projektu.
 * **Ustawienia konta lokalnego**: zmiana nazwy wyświetlanej i hasła (zmianę
   hasła zabezpiecza podanie aktualnego) oraz **usunięcie konta** razem ze
   wszystkimi jego projektami, po potwierdzeniu w oknie aplikacji. Operacji nie

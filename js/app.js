@@ -561,6 +561,24 @@
     konto: "Panel konta",
   };
 
+  /** Jawny zapis danych bieżącej zakładki w aktywnym projekcie. */
+  function saveProjectButton() {
+    return '<button type="button" class="btn small primary" data-act="save-project" ' +
+      'title="Zapisz dane tej zakładki w wybranym projekcie">Zapisz do projektu</button>';
+  }
+
+  /** Lista projektów w nagłówku – szybkie przełączanie bez panelu konta. */
+  function updateProjectSelect() {
+    const select = document.getElementById("project-select");
+    if (!select) return;
+    const idx = readIndex(currentLogin());
+    const items = idx && idx.items.length ? idx.items : [{ id: activeId, name: "Projekt 1" }];
+    select.innerHTML = items.map(function (item) {
+      return '<option value="' + esc(item.id) + '">' + esc(item.name) + "</option>";
+    }).join("");
+    select.value = activeId;
+  }
+
   // --- widoki --------------------------------------------------------------
 
   function viewStart() {
@@ -714,6 +732,7 @@
     let html =
       '<div class="page-head"><div><h1>' + esc(meta[0]) + "</h1><p>" + esc(meta[1]) + "</p></div>" +
       '<div class="head-actions">' +
+      saveProjectButton() +
       '<button class="btn small" data-act="fill-empty">Uzupełnij datę</button>' +
       "</div></div>";
 
@@ -745,7 +764,8 @@
     return (
       '<div class="page-head"><div><h1>Projektanci i autorzy</h1>' +
       "<p>Co najmniej jedna osoba jest wymagana do wygenerowania dokumentacji.</p></div>" +
-      '<div class="head-actions"><button class="btn primary small" data-act="add-projektant">Dodaj osobę</button></div></div>' +
+      '<div class="head-actions">' + saveProjectButton() +
+      '<button class="btn primary small" data-act="add-projektant">Dodaj osobę</button></div></div>' +
       '<section class="panel">' +
       (rows.length
         ? '<div class="table-editor"><table><thead><tr><th>Funkcja</th><th>Imię i nazwisko</th><th>Specjalność</th><th>Nr uprawnień</th><th></th></tr></thead><tbody>' +
@@ -799,7 +819,8 @@
     return (
       '<div class="page-head"><div><h1>Bilans terenu i obiekty</h1>' +
       "<p>Powierzchnie w m². Wskaźniki liczone są względem powierzchni działki.</p></div>" +
-      '<div class="head-actions"><button class="btn small" data-act="add-bilans">Dodaj pozycję</button></div></div>' +
+      '<div class="head-actions">' + saveProjectButton() +
+      '<button class="btn small" data-act="add-bilans">Dodaj pozycję</button></div></div>' +
 
       '<section class="panel">' +
       '<div class="stats">' +
@@ -916,7 +937,8 @@
     return (
       '<div class="page-head"><div><h1>Załączniki</h1>' +
       "<p>Wykaz plików i opracowań dołączanych do wniosku.</p></div>" +
-      '<div class="head-actions"><button class="btn primary small" data-act="add-zalacznik">Dodaj załącznik</button></div></div>' +
+      '<div class="head-actions">' + saveProjectButton() +
+      '<button class="btn primary small" data-act="add-zalacznik">Dodaj załącznik</button></div></div>' +
       '<section class="panel">' +
       (rows.length
         ? '<div class="table-editor"><table><thead><tr><th>Nazwa</th><th>Status</th><th>Opis</th><th></th></tr></thead><tbody>' +
@@ -1175,6 +1197,7 @@
     if (!view) return;
 
     updateEngineChip();
+    updateProjectSelect();
 
     let html = "";
     if (head === "start") html = viewStart();
@@ -1570,6 +1593,14 @@
       });
       return;
     }
+    if (act === "save-project") {
+      const idx = readIndex(currentLogin());
+      const item = idx && idx.items.find(function (entry) { return entry.id === activeId; });
+      saveProject(true);
+      toast("Zapisano dane zakładki w projekcie „" +
+        (item ? item.name : "Projekt") + "”.");
+      return;
+    }
     if (act === "project-new") { createProject(); return; }
     if (act === "project-open") { openProject(target.getAttribute("data-id")); return; }
     if (act === "project-rename") { renameProject(target.getAttribute("data-id")); return; }
@@ -1718,6 +1749,7 @@
 
   function onChange(event) {
     const target = event.target;
+    if (target.id === "project-select") return openProject(target.value);
     if (target.matches("[data-bind]")) return bindField(target);
     if (target.matches("[data-list]")) return bindList(target);
     if (target.matches("[data-row]")) return bindRow(target);
@@ -1980,6 +2012,8 @@
       '<div class="topbar-tools">' +
       '<span class="chip" id="engine-chip">silnik: nieuruchomiony</span>' +
       '<span class="chip save" id="save-state">zapis lokalny</span>' +
+      '<label class="project-picker"><span>Projekt:</span>' +
+      '<select id="project-select" aria-label="Wybierz projekt"></select></label>' +
       (who ? '<span class="chip user" id="user-chip" title="Zalogowano jako ' + esc(who) + '">' + esc(who) + '</span>' : "") +
       '<a class="btn small" href="#/konto" title="Projekty i ustawienia konta">Panel konta</a>' +
       '<button type="button" class="btn small" data-act="logout">Wyloguj</button>' +
