@@ -2395,6 +2395,38 @@ def build_document(kind: str, data: dict) -> Doc:
         raise ValueError(f"Nieznany rodzaj dokumentu: {kind}") from None
 
 
+def build_all_document(data: dict) -> Doc:
+    """Buduje jeden dokument „Komplet dokumentacji” ze wszystkich części.
+
+    Używany przez eksport bezpośredni (DOCX/PDF) w wersji desktopowej
+    i lokalnej wersji webowej. Kolejność części jest taka sama jak w podglądzie.
+    """
+    kinds = ("PZT", "PAB", "WNIOSEK", "OSWIADCZENIE", "BIOZ_INFO", "BIOZ",
+             "ZALACZNIKI")
+    docs = [build_document(kind, data) for kind in kinds]
+    blocks: list[dict] = []
+    for index, doc in enumerate(docs):
+        if index:
+            blocks.append({"t": "pagebreak"})
+        blocks.append(h1(doc.title))
+        blocks.extend(doc.blocks)
+    first = docs[0]
+    meta = dict(first.meta)
+    meta.update({
+        "element": "KOMPLET DOKUMENTACJI",
+        "cover": False,
+        "toc": False,
+        "motyw": resolve_motyw(motyw_z_danych(data)),
+    })
+    return Doc(
+        kind="ALL",
+        title="Komplet dokumentacji",
+        element="KOMPLET DOKUMENTACJI",
+        blocks=blocks,
+        meta=meta,
+    )
+
+
 # ---------------------------------------------------------------------------
 # Sprawdzenie kompletności
 # ---------------------------------------------------------------------------

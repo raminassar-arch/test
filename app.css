@@ -689,7 +689,7 @@ tr.issue-focus { background: var(--gold-pale); }
   max-width: 430px;
   margin: 16px;
 }
-.ask-msg { margin: 0 0 18px; font-size: 0.95rem; }
+.ask-msg { margin: 0 0 18px; font-size: 0.95rem; white-space: pre-line; }
 .ask-actions { display: flex; flex-wrap: wrap; gap: 10px; justify-content: flex-end; }
 
 .boot { display: grid; place-items: center; gap: 12px; padding: 90px 20px; color: var(--muted); }

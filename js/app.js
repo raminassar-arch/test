@@ -309,6 +309,17 @@
     });
   }
 
+  /** Własny komunikat po pobraniu – natywne alert() bywa blokowane w ramkach. */
+  function showDownloadInfo(filename) {
+    return askChoice(
+      "Plik PDF został pobrany:\n" + filename +
+      "\n\nPrzeglądarka zapisała go w folderze pobrań (zwykle „Pobrane”). " +
+      "Aby otworzyć lokalizację, naciśnij Ctrl+J i wybierz „Pokaż w folderze” " +
+      "albo skorzystaj z menu przeglądarki → Pobrane.",
+      [{ value: "ok", label: "Rozumiem", kind: "primary" }]
+    );
+  }
+
   /** Potwierdzenie tak/nie zbudowane na askChoice. */
   function askConfirm(message, confirmLabel) {
     return askChoice(message, [
@@ -1062,7 +1073,8 @@
   function viewPreview() {
     return (
       '<div class="page-head"><div><h1>Podgląd dokumentu</h1>' +
-      "<p>Treść generowana przez ten sam silnik co w wersji desktopowej.</p></div>" +
+      "<p>Treść generowana przez ten sam silnik co w wersji desktopowej. " +
+      "Pliki PDF zapisują się bezpośrednio, bez okna druku.</p></div>" +
       '<div class="head-actions">' +
       '<label class="theme-inline"><span>Motyw:</span>' +
       '<select id="theme-select" class="inline" data-bind="meta.motyw">' + themeOptions() + "</select></label>" +
@@ -1074,7 +1086,7 @@
         })
         .join("") +
       "</select>" +
-      '<button class="btn small" data-act="preview-print" title="Drukuj lub zapisz jako PDF">PDF</button>' +
+      '<button class="btn small" data-act="preview-print" title="Zapisz bezpośrednio jako PDF">Zapisz PDF</button>' +
       '<button class="btn small" data-act="preview-docx" title="Pobierz edytowalny dokument Word">Word (DOCX)</button>' +
       "</div></div>" +
       '<div id="preview-stage" class="preview-stage"><div class="panel"><p>Wybierz dokument i poczekaj na wczytanie silnika…</p></div></div>'
@@ -1103,7 +1115,7 @@
         })
         .join("") +
       "</div>" +
-      '<p class="small muted">PDF powstaje przez okno druku przeglądarki – wybierz „Zapisz jako PDF”. ' +
+      '<p class="small muted">PDF jest zapisywany bezpośrednio do folderu pobrań przeglądarki. ' +
       "Numeracja stron jest dodawana także na okładce.</p>" +
       "</section>"
     );
@@ -1332,7 +1344,7 @@
     const word = document.querySelector('.btn[data-act="preview-docx"]');
     if (print) {
       print.style.display = "";
-      print.setAttribute("title", all ? "Drukuj lub zapisz cały komplet jako PDF" : "Drukuj lub zapisz jako PDF");
+      print.setAttribute("title", all ? "Zapisz cały komplet bezpośrednio jako PDF" : "Zapisz bezpośrednio jako PDF");
     }
     if (word) {
       word.style.display = "";
@@ -1540,12 +1552,40 @@
       .then(busyStop);
   }
 
+  function exportPdf(kind) {
+    const all = kind === ALL_DOCS;
+    return ensureEngine()
+      .then(function () {
+        return window.PABEngine.build(kind, project);
+      })
+      .then(function (doc) {
+        window.PABTheme.use(doc, themeKey());
+        return window.PABEngine.filename(kind, project).then(function (base) {
+          const filename = (all ? "PAB-komplet-dokumentacji" : base) + ".pdf";
+          if (!window.PABPdf || !window.PABPdf.generate) {
+            throw new Error("Generator PDF nie został wczytany (js/pdf.js).");
+          }
+          return window.PABPdf.generate(doc, themeKey()).then(function (bytes) {
+            download(bytes, filename, "application/pdf");
+            return filename;
+          });
+        });
+      });
+  }
+
   function downloadPdf(kind) {
-    busyStart("Przygotowuję wydruk…");
-    const task = kind === ALL_DOCS ? printAll() : printDoc(kind);
-    task
-      .catch(function (err) { toast("Błąd: " + (err.message || err), "err"); })
-      .then(busyStop);
+    const all = kind === ALL_DOCS;
+    busyStart(all ? "Generuję komplet PDF…" : "Generuję PDF…");
+    exportPdf(kind)
+      .then(function (filename) {
+        busyStop();
+        toast("Zapisano " + filename, "ok");
+        return showDownloadInfo(filename);
+      })
+      .catch(function (err) {
+        busyStop();
+        toast("Błąd eksportu PDF: " + (err.message || err), "err");
+      });
   }
 
   // --- kontrola ------------------------------------------------------------

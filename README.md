@@ -28,8 +28,8 @@ Hosting: GitHub Pages, gałąź `main`, katalog główny (`/`).
 | Formularze | `js\fields.js` | wygenerowany z `src\ui_specs.py` – jedno źródło definicji pól |
 | DOCX | `js\docx.js`, `js\zip.js` | zapis OOXML i archiwum ZIP w czystym JavaScripcie |
 | Motywy | `js\theme.js` | pięć wyglądów dokumentów, znak wodny, aliasy dawnych nazw |
-| Podgląd i wydruk | `js\render.js` | podgląd HTML oraz samodzielny dokument A4 do druku / PDF |
-| Eksport | `js\app.js`, `js\docx.js`, `js\render.js` | PDF i DOCX bez płatności, także dla kompletu dokumentacji |
+| Podgląd i wydruk | `js\render.js` | podgląd HTML oraz samodzielny dokument A4 do druku |
+| Eksport | `js\app.js`, `js\docx.js`, `js\pdf.js` | bezpośredni PDF (pdf-lib + fontkit, fonty DejaVu) i DOCX bez płatności, także dla kompletu dokumentacji |
 | Konta | `accounts.json` | edytowalna lista użytkowników |
 | Ekran startowy | `js\auth.js` | logowanie przed uruchomieniem aplikacji |
 | Interfejs | `js\app.js`, `app.css`, `index.html` | routing, formularze, podgląd, eksport i kontrola |
@@ -201,8 +201,10 @@ Po wstawieniu rozciągnij blok na całą szerokość i ustaw wysokość ok. 900�
   zapisują się między odświeżeniami.
 * **Zalecenie:** w Google Sites umieść przede wszystkim odnośnik
   „Otwórz PAB cyfrowa” (samodzielna karta), a osadzenie traktuj jako podgląd.
-* Pobrane pliki DOCX oraz wydruk PDF trafiają do pobranych przeglądarki –
-  Google Sites nie pośredniczy w ich zapisie.
+* Pobrane pliki DOCX oraz PDF trafiają do folderu pobrań przeglądarki –
+  Google Sites nie pośredniczy w ich zapisie. Po zapisie PDF program pokazuje
+  własny komunikat z nazwą pliku i wskazówką, jak otworzyć lokalizację
+  (`Ctrl+J` → „Pokaż w folderze”); nie używa `alert()` ani `confirm()`.
 
 ---
 
@@ -222,10 +224,11 @@ Skrypt:
 * wypisuje liczbę pól, grup i wersję.
 
 Następnie **podnieś numer wersji w odnośnikach `?v=`** w `index.html`
-(`app.css?v=1.9.18`, `js\app.js?v=1.9.18`, …). Bez tego przeglądarki użytkowników
-mogą trzymać stare pliki z pamięci podręcznej. Wersja `1.9.18` oznacza wersję
-statyczną bez płatności, z eksportem PDF/DOCX bezpośrednio w *Podglądzie*
-(bez licencji i bez TXT).
+(`app.css?v=1.9.19`, `js\app.js?v=1.9.19`, …). Bez tego przeglądarki użytkowników
+mogą trzymać stare pliki z pamięci podręcznej. Wersja `1.9.19` oznacza wersję
+statyczną bez płatności, z bezpośrednim eksportem PDF/DOCX w *Podglądzie*
+(bez licencji i bez TXT). PDF jest budowany w przeglądarce przez `js\pdf.js`,
+bez okna druku.
 
 ---
 
@@ -278,7 +281,7 @@ okładce.
 | Format | Sposób | Uwagi |
 | --- | --- | --- |
 | DOCX | `js\docx.js` + `js\zip.js` | pełna zgodność z Wordem, LibreOffice i Google Docs; stylizacja jak w wersji desktopowej |
-| PDF | okno druku przeglądarki | A4 (`@page`), marginesy 25/20/22/25 mm, „Zapisz jako PDF” |
+| PDF | `js\pdf.js` + pdf-lib/fontkit | A4, marginesy jak w wersji desktopowej, pełne polskie znaki (DejaVu), znak wodny i „Strona X z Y” na każdej stronie; plik trafia od razu do pobrań |
 
 TXT oraz zbiorczy ZIP **nie są dostępne** w wersji publicznej (zostały usunięte
 z interfejsu; silnik nadal zawiera `txt()` na potrzeby zgodności kodu). Nazwy
@@ -297,7 +300,7 @@ są rozpoznawane jako aliasy, dzięki czemu starsze projekty nie tracą wyglądu
 Każdy DOCX (nagłówek VML) i każda strona wydruku/PDF zawierają dwulinijkowy znak
 wodny **„BIM ARCHITECTS & CONSULTANTS / WERSJA TESTOWA”**. Zmiana motywu nie
 zmienia treści dokumentów – `sites\parity_hash.py` nadal potwierdza identyczne
-akapity. Statyczna wersja używa cache-bustingu `?v=1.9.18`.
+akapity. Statyczna wersja używa cache-bustingu `?v=1.9.19`.
 
 ---
 
@@ -321,6 +324,7 @@ sites\
     docx.js         zapis OOXML (stylizacja jak w exporters.py)
     theme.js        motywy nr 1–5, znak wodny i aliasy
     render.js       podgląd HTML, komplet i dokument do druku
+    pdf.js          bezpośredni PDF w przeglądarce (pdf-lib, fontkit, DejaVu)
     boot.js         Pyodide + mostek do content.py/exporters.py
     auth.js         logowanie, rejestracja kont i zapis sesji w przeglądarce
     register.js     uruchomienie osobnej strony rejestracja.html
@@ -348,7 +352,8 @@ sites\
   projekt i pozostają edytowalne. DOCX i PDF można następnie wygenerować ponownie.
 * Przycisk **Z PDF** wczytuje wartości pól z tekstowego pliku `.pdf` (także
   wyeksportowanego z PAB cyfrowej). Tekst jest wyciągany w przeglądarce przez
-  `pdf.js`, a rozpoznawanie etykiet odbywa się w tym samym silniku co przy
+  biblioteką pdf.js (pdfjs-dist z CDN), a rozpoznawanie etykiet odbywa się
+  w tym samym silniku co przy
   imporcie DOCX. Zeskanowane PDF-y wymagają OCR i nie są obsługiwane.
 * Część rysunkowa nie jest generowana – program przygotowuje opis i odwołuje się
   do rysunków.
